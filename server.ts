@@ -5,19 +5,22 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Local storage replacement for rooms
-const rooms = new Map<string, any>();
-
-async function deleteRoomLocally(roomId: string) {
-  rooms.delete(roomId);
-  console.log(`Room ${roomId} deleted from memory.`);
-}
+// --- Global Data Store ---
+// In a real app, this would be a database or file. For now, it's in-memory.
+const store: Record<string, Record<string, any>> = {
+  rooms: {},
+  users: {},
+  recordings: {},
+  rounds: {}
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  app.use(express.json()); // Support JSON bodies
+
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
@@ -27,10 +30,54 @@ async function startServer() {
   });
 
   const PORT = 3000;
-
   const roomEmptyTimers = new Map<string, NodeJS.Timeout>();
 
-  // Socket.io signaling logic
+  // --- API Routes for Mock Firestore ---
+  app.get("/api/data/:collection", (req, res) => {
+    const coll = req.params.collection;
+    res.json(store[coll] || {});
+  });
+
+  app.get("/api/data/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    res.json(store[collection]?.[id] || null);
+  });
+
+  app.post("/api/data/:collection", (req, res) => {
+    const coll = req.params.collection;
+    const id = Math.random().toString(36).substr(2, 9);
+    const data = { ...req.body, id, createdAt: Date.now() };
+    if (!store[coll]) store[coll] = {};
+    store[coll][id] = data;
+
+    // Notify all clients of the change
+    io.emit(`data-changed:${coll}`, { type: 'added', id, data });
+    res.json(data);
+  });
+
+  app.put("/api/data/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    if (store[collection]?.[id]) {
+      store[collection][id] = { ...store[collection][id], ...req.body };
+      io.emit(`data-changed:${collection}`, { type: 'updated', id, data: store[collection][id] });
+      res.json(store[collection][id]);
+    } else {
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  app.delete("/api/data/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    if (store[collection]?.[id]) {
+      delete store[collection][id];
+      io.emit(`data-changed:${collection}`, { type: 'deleted', id });
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  // --- Socket.io Logic ---
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
@@ -39,60 +86,30 @@ async function startServer() {
       socket.data.roomId = roomId;
       console.log(`User ${userId} joined room ${roomId}`);
 
-      // Clear timer if it exists
       if (roomEmptyTimers.has(roomId)) {
         clearTimeout(roomEmptyTimers.get(roomId)!);
         roomEmptyTimers.delete(roomId);
-        console.log(`Timer cleared for room ${roomId}`);
       }
 
       socket.to(roomId).emit("user-connected", userId);
     });
 
-    socket.on("offer", (payload) => {
-      io.to(payload.target).emit("offer", {
-        sdp: payload.sdp,
-        sender: payload.sender
-      });
-    });
-
-    socket.on("answer", (payload) => {
-      io.to(payload.target).emit("answer", {
-        sdp: payload.sdp,
-        sender: payload.sender
-      });
-    });
-
-    socket.on("ice-candidate", (payload) => {
-      io.to(payload.target).emit("ice-candidate", {
-        candidate: payload.candidate,
-        sender: payload.sender
-      });
-    });
-
-    socket.on("request-connection", (payload) => {
-      socket.to(payload.roomId).emit("request-connection", payload.userId);
-    });
-
-    socket.on("toggle-live", (roomId, isLive) => {
-      io.to(roomId).emit("live-status-changed", isLive);
-    });
+    socket.on("offer", (payload) => io.to(payload.target).emit("offer", payload));
+    socket.on("answer", (payload) => io.to(payload.target).emit("answer", payload));
+    socket.on("ice-candidate", (payload) => io.to(payload.target).emit("ice-candidate", payload));
+    socket.on("request-connection", (payload) => socket.to(payload.roomId).emit("request-connection", payload.userId));
+    socket.on("toggle-live", (roomId, isLive) => io.to(roomId).emit("live-status-changed", isLive));
 
     socket.on("disconnect", () => {
-      console.log(`User ${socket.id} disconnected.`);
       const roomId = socket.data.roomId;
       if (roomId) {
         const room = io.sockets.adapter.rooms.get(roomId);
         const roomSize = room ? room.size : 0;
-        console.log(`Room ${roomId} size after disconnect: ${roomSize}`);
-
         if (roomSize === 0) {
-          console.log(`Room ${roomId} is empty. Starting 30s inactivity timer.`);
-          const timer = setTimeout(async () => {
-            console.log(`Inactivity timer expired for room ${roomId}. Proceeding to delete.`);
-            await deleteRoomLocally(roomId);
+          const timer = setTimeout(() => {
+            delete store.rooms[roomId];
+            io.emit(`data-changed:rooms`, { type: 'deleted', id: roomId });
             roomEmptyTimers.delete(roomId);
-            console.log(`Room ${roomId} deletion process completed.`);
           }, 30000);
           roomEmptyTimers.set(roomId, timer);
         }
@@ -100,7 +117,7 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
+  // --- Vite / Static Assets ---
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -110,9 +127,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {

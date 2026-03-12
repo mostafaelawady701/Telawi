@@ -1,9 +1,10 @@
 
-// Mock Firebase replacement using LocalStorage
-const STORAGE_USER_KEY = 'telawa_user';
-const STORAGE_DATA_KEY = 'telawa_data';
+import { io } from 'socket.io-client';
 
-// --- Auth Mock ---
+const socket = io(); // Use the existing shared server context
+
+// --- Auth Mock (Still purely local) ---
+const STORAGE_USER_KEY = 'telawa_user';
 export const auth: any = { currentUser: null };
 
 export const loginAnonymously = async () => {
@@ -40,24 +41,16 @@ export const onAuthStateChanged = (authObj: any, callback: (user: any) => void) 
     return () => { };
 };
 
-// --- Firestore Mock ---
-const getLocalData = () => JSON.parse(localStorage.getItem(STORAGE_DATA_KEY) || '{"rooms": {}, "users": {}}');
-const setLocalData = (data: any) => localStorage.setItem(STORAGE_DATA_KEY, JSON.stringify(data));
-
+// --- Firestore Mock (Talking to Server) ---
 export const db: any = {};
+
 export const collection = (db_or_ref: any, ...path: string[]) => {
-    // Simplistic subcollection handling: join path with /
-    const fullPath = path.join('/');
-    return { collName: fullPath };
+    return { collName: path.join('/') };
 };
+
 export const doc = (db_or_ref: any, ...path: string[]) => {
-    // If first arg is a ref, its collName is prepended
-    let base = '';
-    let parts = path;
-    if (db_or_ref && typeof db_or_ref === 'object' && db_or_ref.collName) {
-        base = db_or_ref.collName + '/';
-    }
-    const fullPath = base + parts.join('/');
+    let base = (db_or_ref && db_or_ref.collName) ? db_or_ref.collName + '/' : '';
+    const fullPath = base + path.join('/');
     const lastSlash = fullPath.lastIndexOf('/');
     return {
         collName: fullPath.substring(0, lastSlash),
@@ -66,90 +59,97 @@ export const doc = (db_or_ref: any, ...path: string[]) => {
 };
 
 export const addDoc = async (collName_or_ref: any, data: any) => {
-    const allData = getLocalData();
     const collName = collName_or_ref.collName || collName_or_ref;
-    const id = Math.random().toString(36).substr(2, 9);
-    if (!allData[collName]) allData[collName] = {};
-    allData[collName][id] = { ...data, id, createdAt: Date.now() };
-    setLocalData(allData);
-    return { id };
+    const res = await fetch(`/api/data/${collName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    return res.json();
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-    const allData = getLocalData();
-    const collName = docRef.collName;
-    const id = docRef.id;
-    if (allData[collName] && allData[collName][id]) {
-        allData[collName][id] = { ...allData[collName][id], ...data };
-        setLocalData(allData);
-    }
+    await fetch(`/api/data/${docRef.collName}/${docRef.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
 };
 
 export const deleteDoc = async (docRef: any) => {
-    const allData = getLocalData();
-    if (allData[docRef.collName]) {
-        delete allData[docRef.collName][docRef.id];
-        setLocalData(allData);
-    }
+    await fetch(`/api/data/${docRef.collName}/${docRef.id}`, {
+        method: 'DELETE'
+    });
 };
 
 export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) => {
-    const refresh = () => {
-        const allData = getLocalData();
-        const collName = queryOrRef.collName || queryOrRef;
-        const docsObj = allData[collName] || {};
+    const collName = queryOrRef.collName || queryOrRef;
 
+    const refresh = async () => {
         if (queryOrRef.id) {
-            const d = docsObj[queryOrRef.id];
+            const res = await fetch(`/api/data/${collName}/${queryOrRef.id}`);
+            const data = await res.json();
             callback({
-                exists: () => !!d,
+                exists: () => !!data,
                 id: queryOrRef.id,
-                data: () => d
+                data: () => data
             });
         } else {
-            const docs = Object.values(docsObj).map(d => ({
-                id: (d as any).id,
-                ref: { collName, id: (d as any).id },
+            const res = await fetch(`/api/data/${collName}`);
+            const dataObj = await res.json();
+            const docs = Object.values(dataObj).map((d: any) => ({
+                id: d.id,
+                ref: { collName, id: d.id },
                 data: () => d
             }));
             callback({ docs });
         }
     };
+
     refresh();
-    const interval = setInterval(refresh, 2000);
-    return () => clearInterval(interval);
+
+    // Listen for changes from server
+    const eventName = `data-changed:${collName}`;
+    socket.on(eventName, refresh);
+
+    return () => {
+        socket.off(eventName, refresh);
+    };
 };
 
-export const query = (c: any, ...args: any[]) => c;
-export const orderBy = (...args: any[]) => ({});
-export const limit = (...args: any[]) => ({});
+export const getDocs = async (collNameOrQuery: any) => {
+    const collName = collNameOrQuery.collName || collNameOrQuery;
+    const res = await fetch(`/api/data/${collName}`);
+    const dataObj = await res.json();
+    const docs = Object.values(dataObj).map((d: any) => ({
+        id: d.id,
+        ref: { collName, id: d.id },
+        data: () => d
+    }));
+    return {
+        docs,
+        empty: docs.length === 0
+    };
+};
+
+export const getDoc = async (docRef: any) => {
+    const res = await fetch(`/api/data/${docRef.collName}/${docRef.id}`);
+    const data = await res.json();
+    return {
+        exists: () => !!data,
+        data: () => data
+    };
+};
+
+// Dummy constants
+export const query = (c: any) => c;
+export const orderBy = () => ({});
+export const limit = () => ({});
 export const arrayUnion = (item: any) => item;
 export const arrayRemove = (item: any) => item;
-export const getDocs = async (collNameOrQuery: any) => {
-    const allData = getLocalData();
-    const collName = collNameOrQuery.collName || collNameOrQuery;
-    const docsObj = allData[collName] || {};
-    return {
-        docs: Object.values(docsObj).map(d => ({
-            id: (d as any).id,
-            ref: { collName, id: (d as any).id },
-            data: () => d
-        })),
-        empty: Object.keys(docsObj).length === 0
-    };
-};
-
-export const loginWithGoogle = loginAnonymously;
 export const setDoc = updateDoc;
-export const getDoc = async (docRef: any) => {
-    const allData = getLocalData();
-    const d = allData[docRef.collName]?.[docRef.id];
-    return {
-        exists: () => !!d,
-        data: () => d
-    };
-};
-export const writeBatch = (db: any) => ({
-    delete: (ref: any) => { },
+export const loginWithGoogle = loginAnonymously;
+export const writeBatch = () => ({
+    delete: () => { },
     commit: async () => { }
 });
