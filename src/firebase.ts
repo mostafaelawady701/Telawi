@@ -72,7 +72,19 @@ export const addDoc = async (collRef: any, data: any) => {
         .select()
         .single();
 
-    if (error) console.error("Supabase Add Error:", error);
+    if (error) {
+        console.error("Supabase Add Error:", error);
+        // If the error is about a missing column, try to retry without that column
+        if (error.code === '42703') { // Postgres "undefined_column"
+            const match = error.message.match(/column "(.*)" of relation/);
+            const columnName = match ? match[1] : null;
+            if (columnName && data[columnName] !== undefined) {
+                console.warn(`Column "${columnName}" missing in Supabase. Retrying without it...`);
+                const { [columnName]: _, ...filteredData } = data;
+                return addDoc(collRef, filteredData);
+            }
+        }
+    }
     return inserted;
 };
 
@@ -110,7 +122,20 @@ export const updateDoc = async (docRef: any, data: any) => {
         .from(table)
         .update(finalData)
         .eq('id', id);
-    if (error) console.error("Supabase Update Error:", error);
+
+    if (error) {
+        console.error("Supabase Update Error:", error);
+        // Retry without missing column if needed
+        if (error.code === '42703') {
+            const match = error.message.match(/column "(.*)" of relation/);
+            const columnName = match ? match[1] : null;
+            if (columnName && finalData[columnName] !== undefined) {
+                console.warn(`Column "${columnName}" missing in Supabase. Retrying update without it...`);
+                const { [columnName]: _, ...filteredData } = finalData;
+                return updateDoc(docRef, filteredData);
+            }
+        }
+    }
 };
 
 export const deleteDoc = async (docRef: any) => {

@@ -432,15 +432,19 @@ export default function RoomView({ user }: { user: any }) {
         createdAt: Date.now()
       });
 
+      if (!roundRef || !roundRef.id) {
+        throw new Error("فشل إنشاء الجولة. تأكد من إعدادات قاعدة البيانات.");
+      }
+
       await updateDoc(doc(db, 'rooms', roomId), {
         status: 'playing',
         currentRoundId: roundRef.id,
         readyUsers: [] // Reset ready state for next round
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting round:", error);
-      alert("حدث خطأ أثناء جلب الآية. تأكد من صحة رقم السورة والآية.");
+      alert(error.message || "حدث خطأ أثناء جلب الآية. تأكد من صحة رقم السورة والآية.");
     } finally {
       setIsStartingRound(false);
     }

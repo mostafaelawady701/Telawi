@@ -54,7 +54,7 @@ export default function Dashboard({ user }: { user: any }) {
 
     setIsCreating(true);
     try {
-      const roomRef = await addDoc(collection(db, 'rooms'), {
+      const roomData = {
         name: newRoomName,
         hostId: user.uid,
         status: 'waiting',
@@ -67,11 +67,18 @@ export default function Dashboard({ user }: { user: any }) {
           color: newThemeColor,
           backgroundImage: newThemeBg || bgPresets[0].url
         }
-      });
+      };
+
+      const roomRef = await addDoc(collection(db, 'rooms'), roomData);
+      
+      if (!roomRef || !roomRef.id) {
+        throw new Error("فشل في استلام بيانات الغرفة من السيرفر. قد يكون هناك حقل ناقص في قاعدة البيانات (مثل readyUsers).");
+      }
+
       navigate(`/room/${roomRef.id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating room:", error);
-      alert("فشل إنشاء الغرفة.");
+      alert(error.message || "حدث خطأ أثناء إنشاء الغرفة. تأكد من إعدادات قاعدة البيانات.");
     } finally {
       setIsCreating(false);
     }
