@@ -746,7 +746,8 @@ export default function RoomView({ user }: { user: any }) {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 flex flex-col gap-8">
+        <main className="flex-1 w-full max-w-[1800px] mx-auto px-4 md:px-8 py-6 grid px-4 grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-h-[calc(100vh-80px)] items-start">
+    <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-6 sticky top-28 h-[calc(100vh-120px)] overflow-y-auto no-scrollbar scroll-smooth pb-10">
 
           {/* Participant List & Ready Bar */}
           <motion.div
@@ -834,7 +835,274 @@ export default function RoomView({ user }: { user: any }) {
             )}
           </motion.div>
 
-          {/* Game Area */}
+          {/* Leaderboard Section */}
+          {leaderboard.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass rounded-[2.5rem] p-8 mt-8"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-2xl font-black flex items-center gap-3 text-amber-400">
+                  <Trophy className="w-8 h-8" />
+                  لوحة الشرف
+                </h3>
+                <div className="px-4 py-1.5 glass-dark rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  أفضل القراء
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {leaderboard.map((user, idx) => (
+                  <motion.div
+                    key={idx}
+                    whileHover={{ y: -5 }}
+                    className="flex items-center gap-4 glass-dark p-5 rounded-3xl border border-white/5 relative overflow-hidden group"
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${idx === 0 ? 'from-amber-500/10 to-transparent' :
+                      idx === 1 ? 'from-slate-400/10 to-transparent' :
+                        idx === 2 ? 'from-amber-700/10 to-transparent' :
+                          'from-white/5 to-transparent'
+                      } opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
+
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-2xl relative z-10 ${idx === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-amber-900/40' :
+                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-100' :
+                        idx === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900 text-white' :
+                          'glass-dark/10 text-slate-400'
+                      }`}>
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1 relative z-10">
+                      <p className="font-black text-white text-lg leading-tight">{user.name}</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{user.recCount} تلاوة</p>
+                    </div>
+                    <div className="text-3xl font-black text-amber-400 relative z-10">
+                      {user.totalScore}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Recordings List */}
+          {recordings.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass rounded-[2.5rem] p-8"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                <h3 className="text-2xl font-black flex items-center gap-3">
+                  <Mic className={`w-8 h-8 ${theme.text}`} />
+                  تسجيلات الجولة
+                </h3>
+                <div className="flex items-center gap-2 p-1.5 glass-dark rounded-2xl border border-white/5">
+                  {[
+                    { id: 'time', label: 'الأحدث' },
+                    { id: 'likes', label: 'الإعجابات' },
+                    { id: 'score', label: 'التقييم' }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setSortBy(tab.id as any)}
+                      className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${sortBy === tab.id ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <AnimatePresence mode="popLayout">
+                  {sortedRecordings.map((rec, idx) => {
+                    const isTopRated = (sortBy === 'score' || sortBy === 'likes') && idx === 0 && (rec.score || (rec.likes && rec.likes.length > 0));
+                    return (
+                      <motion.div
+                        key={rec.id}
+                        layout
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className={`flex flex-col p-6 rounded-[2rem] transition-all duration-500 relative overflow-hidden group ${isTopRated
+                          ? 'bg-amber-500/5 border border-amber-500/20 shadow-2xl shadow-amber-900/10'
+                          : 'glass-dark border border-white/5 hover:glass-dark/[0.04]'
+                          }`}
+                      >
+                        {isTopRated && (
+                          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
+                        )}
+
+                        <div className="flex items-center justify-between mb-6 relative z-10">
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <img
+                                src={participants.find(p => p.uid === rec.userId)?.photoURL}
+                                alt="User"
+                                className="w-14 h-14 rounded-2xl object-cover border-2 border-white/10"
+                                referrerPolicy="no-referrer"
+                              />
+                              {isTopRated && (
+                                <div className="absolute -top-2 -right-2 bg-amber-500 p-1.5 rounded-lg shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
+                                  <Trophy className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-black text-white text-lg">{rec.userName}</p>
+                              <div className="flex items-center gap-3 mt-1">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                  {new Date(rec.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                  <Clock className="w-3 h-3" />
+                                  {rec.duration}s
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {rec.score !== undefined && (
+                              <motion.div
+                                key={rec.score}
+                                initial={{ scale: 0.8, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl"
+                              >
+                                <Star className="w-4 h-4 fill-current" />
+                                <span className="text-sm font-black">{rec.score}/100</span>
+                              </motion.div>
+                            )}
+                            <button
+                              onClick={() => handleLike(rec)}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${rec.likes?.includes(user.uid)
+                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                : 'glass-dark/5 text-slate-400 border border-white/5 hover:glass-dark/10'
+                                }`}
+                            >
+                              <Heart className={`w-4 h-4 ${rec.likes?.includes(user.uid) ? 'fill-current' : ''}`} />
+                              <span className="text-sm font-bold">{rec.likes?.length || 0}</span>
+                            </button>
+
+                            <a
+                              href={rec.audioData}
+                              download={`tilaawa-${rec.userName}-${Date.now()}.webm`}
+                              className="p-2.5 glass-dark text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all"
+                              title="تحميل التسجيل"
+                            >
+                              <Download className="w-5 h-5" />
+                            </a>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
+                          <div className="flex-1 w-full">
+                            <audio src={rec.audioData} controls className="w-full h-12 rounded-xl" />
+                          </div>
+
+                          {isHost && round?.status === 'reviewing' && (
+                            <div className="flex flex-col gap-4 p-5 glass-dark rounded-3xl border border-white/10 relative z-10">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Star className="w-4 h-4 text-amber-400" />
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تقييم المضيف</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {[...Array(5)].map((_, i) => {
+                                    const scoreValue = (i + 1) * 20;
+                                    const isActive = (rec.score || 0) >= scoreValue;
+                                    return (
+                                      <button
+                                        key={i}
+                                        onClick={() => handleScore(rec, scoreValue)}
+                                        className={`p-1 transition-all duration-300 hover:scale-110 ${isActive ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400/50'}`}
+                                        title={`${scoreValue} نقطة`}
+                                      >
+                                        <Star className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`} />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 pt-3 border-t border-white/5">
+                                <div className="relative flex-1">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={rec.score || ''}
+                                    onChange={(e) => handleScore(rec, Number(e.target.value))}
+                                    placeholder="درجة من 100"
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
+                                  />
+                                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase">درجة</div>
+                                </div>
+                                <div className="px-3 py-2 glass-dark rounded-xl border border-white/5 text-amber-400 font-black text-lg min-w-[3rem] text-center">
+                                  {rec.score || 0}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {isHost && round?.status === 'reviewing' && (
+                          <div className="mt-6 pt-6 border-t border-white/5">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">الموجة الصوتية للتسجيل</p>
+                            <div className="glass-dark p-4 rounded-2xl border border-white/5">
+                              <Waveform audioUrl={rec.audioData} />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-6 pt-6 border-t border-white/5">
+                          {rec.feedback ? (
+                            <div className="flex gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                                <Sparkles className="w-5 h-5 text-emerald-400" />
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">تقييم الذكاء الاصطناعي</p>
+                                <p className="text-slate-300 text-sm leading-relaxed font-medium">{rec.feedback}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleGetFeedback(rec)}
+                              disabled={analyzingId === rec.id}
+                              className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${analyzingId === rec.id
+                                ? 'glass-dark/5 text-slate-400 cursor-not-allowed'
+                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
+                                }`}
+                            >
+                              {analyzingId === rec.id ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  جاري تحليل التلاوة...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-4 h-4" />
+                                  احصل على تقييم الذكاء الاصطناعي
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          )}
+
+        
+    </div> {/* Close Left Sidebar */}
+    
+    {/* RIGHT STAGE: Main Game Area */}
+    <div className="lg:col-span-8 xl:col-span-9 flex flex-col h-[calc(100vh-120px)] overflow-y-auto no-scrollbar pb-10">
+      {/* Game Area */}
           <motion.div
             layout
             className="glass rounded-[2.5rem] p-8 min-h-[450px] flex flex-col items-center justify-center relative overflow-hidden group"
@@ -1160,269 +1428,10 @@ export default function RoomView({ user }: { user: any }) {
             ) : null}
           </motion.div>
 
-          {/* Leaderboard Section */}
-          {leaderboard.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-[2.5rem] p-8 mt-8"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-black flex items-center gap-3 text-amber-400">
-                  <Trophy className="w-8 h-8" />
-                  لوحة الشرف
-                </h3>
-                <div className="px-4 py-1.5 glass-dark rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  أفضل القراء
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {leaderboard.map((user, idx) => (
-                  <motion.div
-                    key={idx}
-                    whileHover={{ y: -5 }}
-                    className="flex items-center gap-4 glass-dark p-5 rounded-3xl border border-white/5 relative overflow-hidden group"
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${idx === 0 ? 'from-amber-500/10 to-transparent' :
-                      idx === 1 ? 'from-slate-400/10 to-transparent' :
-                        idx === 2 ? 'from-amber-700/10 to-transparent' :
-                          'from-white/5 to-transparent'
-                      } opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-2xl relative z-10 ${idx === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-amber-900/40' :
-                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-100' :
-                        idx === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900 text-white' :
-                          'glass-dark/10 text-slate-400'
-                      }`}>
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 relative z-10">
-                      <p className="font-black text-white text-lg leading-tight">{user.name}</p>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{user.recCount} تلاوة</p>
-                    </div>
-                    <div className="text-3xl font-black text-amber-400 relative z-10">
-                      {user.totalScore}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Recordings List */}
-          {recordings.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-[2.5rem] p-8"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-                <h3 className="text-2xl font-black flex items-center gap-3">
-                  <Mic className={`w-8 h-8 ${theme.text}`} />
-                  تسجيلات الجولة
-                </h3>
-                <div className="flex items-center gap-2 p-1.5 glass-dark rounded-2xl border border-white/5">
-                  {[
-                    { id: 'time', label: 'الأحدث' },
-                    { id: 'likes', label: 'الإعجابات' },
-                    { id: 'score', label: 'التقييم' }
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setSortBy(tab.id as any)}
-                      className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${sortBy === tab.id ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <AnimatePresence mode="popLayout">
-                  {sortedRecordings.map((rec, idx) => {
-                    const isTopRated = (sortBy === 'score' || sortBy === 'likes') && idx === 0 && (rec.score || (rec.likes && rec.likes.length > 0));
-                    return (
-                      <motion.div
-                        key={rec.id}
-                        layout
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className={`flex flex-col p-6 rounded-[2rem] transition-all duration-500 relative overflow-hidden group ${isTopRated
-                          ? 'bg-amber-500/5 border border-amber-500/20 shadow-2xl shadow-amber-900/10'
-                          : 'glass-dark border border-white/5 hover:glass-dark/[0.04]'
-                          }`}
-                      >
-                        {isTopRated && (
-                          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
-                        )}
-
-                        <div className="flex items-center justify-between mb-6 relative z-10">
-                          <div className="flex items-center gap-4">
-                            <div className="relative">
-                              <img
-                                src={participants.find(p => p.uid === rec.userId)?.photoURL}
-                                alt="User"
-                                className="w-14 h-14 rounded-2xl object-cover border-2 border-white/10"
-                                referrerPolicy="no-referrer"
-                              />
-                              {isTopRated && (
-                                <div className="absolute -top-2 -right-2 bg-amber-500 p-1.5 rounded-lg shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-                                  <Trophy className="w-3 h-3 text-white" />
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-black text-white text-lg">{rec.userName}</p>
-                              <div className="flex items-center gap-3 mt-1">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                  {new Date(rec.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                  <Clock className="w-3 h-3" />
-                                  {rec.duration}s
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            {rec.score !== undefined && (
-                              <motion.div
-                                key={rec.score}
-                                initial={{ scale: 0.8, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl"
-                              >
-                                <Star className="w-4 h-4 fill-current" />
-                                <span className="text-sm font-black">{rec.score}/100</span>
-                              </motion.div>
-                            )}
-                            <button
-                              onClick={() => handleLike(rec)}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${rec.likes?.includes(user.uid)
-                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                : 'glass-dark/5 text-slate-400 border border-white/5 hover:glass-dark/10'
-                                }`}
-                            >
-                              <Heart className={`w-4 h-4 ${rec.likes?.includes(user.uid) ? 'fill-current' : ''}`} />
-                              <span className="text-sm font-bold">{rec.likes?.length || 0}</span>
-                            </button>
-
-                            <a
-                              href={rec.audioData}
-                              download={`tilaawa-${rec.userName}-${Date.now()}.webm`}
-                              className="p-2.5 glass-dark text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all"
-                              title="تحميل التسجيل"
-                            >
-                              <Download className="w-5 h-5" />
-                            </a>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-                          <div className="flex-1 w-full">
-                            <audio src={rec.audioData} controls className="w-full h-12 rounded-xl" />
-                          </div>
-
-                          {isHost && round?.status === 'reviewing' && (
-                            <div className="flex flex-col gap-4 p-5 glass-dark rounded-3xl border border-white/10 relative z-10">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Star className="w-4 h-4 text-amber-400" />
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تقييم المضيف</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  {[...Array(5)].map((_, i) => {
-                                    const scoreValue = (i + 1) * 20;
-                                    const isActive = (rec.score || 0) >= scoreValue;
-                                    return (
-                                      <button
-                                        key={i}
-                                        onClick={() => handleScore(rec, scoreValue)}
-                                        className={`p-1 transition-all duration-300 hover:scale-110 ${isActive ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400/50'}`}
-                                        title={`${scoreValue} نقطة`}
-                                      >
-                                        <Star className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`} />
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3 pt-3 border-t border-white/5">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    value={rec.score || ''}
-                                    onChange={(e) => handleScore(rec, Number(e.target.value))}
-                                    placeholder="درجة من 100"
-                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
-                                  />
-                                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase">درجة</div>
-                                </div>
-                                <div className="px-3 py-2 glass-dark rounded-xl border border-white/5 text-amber-400 font-black text-lg min-w-[3rem] text-center">
-                                  {rec.score || 0}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {isHost && round?.status === 'reviewing' && (
-                          <div className="mt-6 pt-6 border-t border-white/5">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">الموجة الصوتية للتسجيل</p>
-                            <div className="glass-dark p-4 rounded-2xl border border-white/5">
-                              <Waveform audioUrl={rec.audioData} />
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="mt-6 pt-6 border-t border-white/5">
-                          {rec.feedback ? (
-                            <div className="flex gap-4">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                                <Sparkles className="w-5 h-5 text-emerald-400" />
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">تقييم الذكاء الاصطناعي</p>
-                                <p className="text-slate-300 text-sm leading-relaxed font-medium">{rec.feedback}</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => handleGetFeedback(rec)}
-                              disabled={analyzingId === rec.id}
-                              className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${analyzingId === rec.id
-                                ? 'glass-dark/5 text-slate-400 cursor-not-allowed'
-                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-                                }`}
-                            >
-                              {analyzingId === rec.id ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  جاري تحليل التلاوة...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="w-4 h-4" />
-                                  احصل على تقييم الذكاء الاصطناعي
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          )}
-
-        </main>
+          
+    </div>
+    
+    </main>
       </div>
 
       {/* Settings Modal */}
