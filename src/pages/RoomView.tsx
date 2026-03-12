@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db, doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, arrayUnion, arrayRemove } from '../firebase';
+import { db, doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, arrayUnion, arrayRemove, syncUserScore } from '../firebase';
 import { Room, Round, Recording, User } from '../types';
 import { Mic, Square, Play, Download, Users, Settings, Loader2, Trophy, Clock, Sparkles, X, Heart, Volume2, Star, Share2, Check, BookOpen, Radio } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -193,6 +193,8 @@ export default function RoomView({ user }: { user: any }) {
     if (!roomId || !isHost) return;
     try {
       await updateDoc(doc(db, 'rooms', roomId, 'recordings', recording.id), { score });
+      // Trigger score sync for the user
+      await syncUserScore(recording.userId);
     } catch (error) {}
   };
 

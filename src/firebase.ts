@@ -214,13 +214,33 @@ export const getUserStats = async (uid: string) => {
 };
 
 /**
- * Fetches the global leaderboard
+ * Updates a user's total score in the users table for leaderboard efficiency
+ */
+export const syncUserScore = async (uid: string) => {
+    const stats = await getUserStats(uid);
+    const { error } = await supabase.from('users').update({
+        totalScore: stats.totalScore,
+        recordingCount: stats.count
+    }).eq('id', uid);
+    if (error) console.error("Error syncing user score:", error);
+};
+
+/**
+ * Updates public user profile
+ */
+export const updateUserProfile = async (uid: string, data: any) => {
+    const { error } = await supabase.from('users').update(data).eq('id', uid);
+    if (error) throw error;
+};
+
+/**
+ * Fetches the global leaderboard sorted by score
  */
 export const getGlobalLeaderboard = async (limitCount = 10) => {
     const { data, error } = await supabase
         .from('users')
         .select('*')
-        .order('createdAt', { ascending: false }) // Or by a 'totalScore' field if you add one
+        .order('totalScore', { ascending: false })
         .limit(limitCount);
         
     return data || [];

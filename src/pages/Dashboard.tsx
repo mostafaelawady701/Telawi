@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, logout, collection, addDoc, onSnapshot, query, orderBy, limit, updateDoc, doc, arrayUnion, getDocs, deleteDoc, getUserStats, getGlobalLeaderboard } from '../firebase';
-import { Plus, LogOut, Users, Mic, Shuffle, Sparkles, Radio, Trophy, Search, BookOpen, Settings, X, Loader2, Copy, Check, MessageSquare, Heart, Star, Crown, TrendingUp, Award } from 'lucide-react';
+import { db, logout, collection, addDoc, onSnapshot, query, orderBy, limit, updateDoc, doc, arrayUnion, getDocs, deleteDoc, getUserStats, getGlobalLeaderboard, updateUserProfile, supabase } from '../firebase';
+import { Plus, LogOut, Users, Mic, Shuffle, Sparkles, Radio, Trophy, Search, BookOpen, Settings, X, Loader2, Copy, Check, MessageSquare, Heart, Star, Crown, TrendingUp, Award, User as UserIcon, Camera } from 'lucide-react';
 import { Room } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -20,6 +20,9 @@ export default function Dashboard({ user }: { user: any }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState({ totalScore: 0, count: 0, average: 0 });
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [editName, setEditName] = useState(user.displayName || '');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const navigate = useNavigate();
 
   const themePresets = [
@@ -125,10 +128,18 @@ export default function Dashboard({ user }: { user: any }) {
           </motion.div>
 
           <div className="flex items-center gap-6">
-            <div className="hidden lg:flex items-center gap-4 bg-white/5 px-4 py-2 rounded-2xl border border-white/10 group hover:border-emerald-500/30 transition-all duration-300">
+            <div className="hidden lg:flex items-center gap-4 bg-white/5 px-4 py-2 rounded-2xl border border-white/10 group hover:border-emerald-500/30 transition-all duration-300 cursor-pointer" onClick={() => setIsProfileModalOpen(true)}>
                <div className="text-right">
-                <p className="text-xs font-bold text-white">{user.displayName || 'قارئ'}</p>
-                <p className="text-[10px] text-emerald-400 font-medium">متصل الآن</p>
+                <p className="text-xs font-bold text-white flex items-center gap-2">
+                  {user.displayName || 'قارئ'}
+                  <span className="px-2 py-0.5 bg-gold-400/10 text-gold-400 text-[8px] rounded-full border border-gold-400/20 uppercase tracking-tighter">
+                    {stats.totalScore > 5000 ? 'حافظ' : stats.totalScore > 1000 ? 'مرتل' : 'مبتدئ'}
+                  </span>
+                </p>
+                <p className="text-[10px] text-emerald-400 font-medium flex items-center justify-end gap-1">
+                  <TrendingUp className="w-3 h-3" />
+                  {stats.totalScore} نقطة
+                </p>
               </div>
               <img
                 src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
@@ -434,6 +445,96 @@ export default function Dashboard({ user }: { user: any }) {
                   تأسيس المجلس الآن
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {isProfileModalOpen && (
+          <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-dark border border-white/10 rounded-[3rem] p-10 max-w-md w-full shadow-[0_0_100px_rgba(0,0,0,0.8)] relative"
+            >
+              <button 
+                onClick={() => setIsProfileModalOpen(false)}
+                className="absolute top-8 left-8 p-3 hover:bg-white/10 rounded-2xl transition-all"
+              >
+                <X className="w-6 h-6 text-slate-400" />
+              </button>
+
+              <div className="flex flex-col items-center mb-10">
+                 <div className="relative group mb-6">
+                    <img 
+                      src={user.photoURL} 
+                      className="w-32 h-32 rounded-[2.5rem] border-4 border-emerald-500/20 shadow-2xl group-hover:scale-105 transition-transform duration-500" 
+                      alt="" 
+                    />
+                    <div className="absolute inset-0 bg-black/40 rounded-[2.5rem] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer">
+                      <Camera className="w-8 h-8 text-white" />
+                    </div>
+                 </div>
+                 <h2 className="text-3xl font-black text-white font-ruqaa mb-2">إعدادات الحساب</h2>
+                 <p className="text-slate-500 text-xs font-black uppercase tracking-widest">تعديل الملف الشخصي الاحترافي</p>
+              </div>
+
+              <div className="space-y-8">
+                <div className="space-y-3">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mr-2">الاسم الكريم</label>
+                  <div className="relative">
+                    <UserIcon className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-400" />
+                    <input 
+                      type="text" 
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full pr-14 pl-6 py-4 glass-dark border border-white/10 rounded-2xl text-white outline-none focus:border-emerald-500/50 transition-all font-bold"
+                      placeholder="أدخل اسمك..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="p-5 glass rounded-3xl text-center border border-white/5">
+                      <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">النقاط</p>
+                      <p className="text-2xl font-black text-gold-400">{stats.totalScore}</p>
+                   </div>
+                   <div className="p-5 glass rounded-3xl text-center border border-white/5">
+                      <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">الجولات</p>
+                      <p className="text-2xl font-black text-emerald-400">{stats.count}</p>
+                   </div>
+                </div>
+
+                <button
+                  disabled={isUpdatingProfile}
+                  onClick={async () => {
+                    setIsUpdatingProfile(true);
+                    try {
+                      // Update Supabase Auth
+                      const { error } = await supabase.auth.updateUser({
+                        data: { display_name: editName }
+                      });
+                      if (error) throw error;
+                      
+                      // Update mirrored users table
+                      await updateUserProfile(user.uid, { displayName: editName });
+                      
+                      setIsProfileModalOpen(false);
+                      window.location.reload(); // Refresh to apply changes everywhere
+                    } catch (err) {
+                      alert("فشل تحديث البيانات.");
+                    } finally {
+                      setIsUpdatingProfile(false);
+                    }
+                  }}
+                  className="w-full py-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-[2rem] font-bold text-xl shadow-[0_20px_40px_rgba(16,185,129,0.3)] hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
+                >
+                  {isUpdatingProfile ? <Loader2 className="w-6 h-6 animate-spin" /> : <Check className="w-6 h-6" />}
+                  حفظ التغييرات
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
