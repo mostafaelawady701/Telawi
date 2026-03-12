@@ -618,12 +618,27 @@ export default function RoomView({ user }: { user: any }) {
             <motion.div layout className="glass-dark rounded-[2.5rem] p-8 min-h-[500px] flex flex-col items-center justify-center relative border border-white/6 shadow-2xl card-glow-emerald">
               {room.status === 'waiting' ? (
                 <div className="text-center space-y-8 w-full max-w-md">
-                   <div className={`w-32 h-32 mx-auto rounded-[3rem] ${theme.lightBg} flex items-center justify-center shadow-2xl`}>
-                     <Users className={`w-14 h-14 ${theme.text}`} />
-                   </div>
-                   <h2 className="text-4xl font-black">المجلس منعقد</h2>
-                   <p className="text-slate-400">بانتظار اكتمال القراء وبدء الجولة من المضيف</p>
-                   {isHost && (
+                    <div className={`w-36 h-36 mx-auto rounded-full ${theme.lightBg} flex items-center justify-center relative`}>
+                      <div className={`absolute inset-0 rounded-full border border-[${THEME_GLOWS[room?.theme?.color || 'emerald']}] animate-ping opacity-20`} />
+                      <Users className={`w-16 h-16 ${theme.text} relative z-10`} />
+                    </div>
+                    <div className="space-y-3">
+                      <h2 className="text-4xl md:text-5xl font-black tracking-tight text-white drop-shadow-lg">المجلس منعقد</h2>
+                      <p className="text-slate-400 text-lg">بانتظار اكتمال استعداد القراء للبدء</p>
+                    </div>
+                    
+                    <div className="flex items-center gap-4 justify-center py-6">
+                       <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="font-bold text-sm">{activeUsers.filter(u => u.isReady).length} مستعد</span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-white/10"></span>
+                          <span className="font-bold text-sm text-slate-400">{activeUsers.length} متصل</span>
+                       </div>
+                    </div>
+
+                    {isHost && (
                        <div className="space-y-6 pt-6">
                          <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl mb-4">
                            <button onClick={() => setVerseSelectionMode('random')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-colors ${verseSelectionMode === 'random' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-white'}`}>اختيار آلي</button>
@@ -657,12 +672,25 @@ export default function RoomView({ user }: { user: any }) {
                    </div>
                    <h2 className="text-5xl md:text-7xl font-arabic leading-[1.8] text-white drop-shadow-2xl" dir="rtl">{round.verseText}</h2>
 
-                   <div className="pt-10 flex flex-col items-center">
-                     {round.status === 'countdown' && <div className="text-9xl font-black animate-bounce">{localCountdown}</div>}
+                   <div className="pt-6 flex flex-col items-center w-full">
+                     {round.status === 'countdown' && (
+                       <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center justify-center gap-6">
+                         <div className="text-9xl font-black text-transparent bg-clip-text bg-gradient-to-b from-emerald-300 to-emerald-600 drop-shadow-[0_0_30px_rgba(52,211,153,0.5)] animate-pulse">{localCountdown}</div>
+                         <p className="text-xl font-bold text-emerald-400/80 animate-bounce">استعد للتلاوة...</p>
+                       </motion.div>
+                     )}
                      {round.status === 'recording' && (
-                       <div className="w-full flex flex-col items-center gap-8">
+                       <div className="w-full max-w-xl mx-auto flex flex-col items-center gap-8">
                          {!round.activeRecorderId ? (
-                           <button onClick={claimRecording} className="px-16 py-8 rounded-[3rem] bg-emerald-500 text-white font-black text-3xl shadow-2xl hover:scale-105 transition-all flex items-center gap-4"><Mic className="w-10 h-10" /> ترتيل</button>
+                           <button onClick={claimRecording} className="group relative w-full overflow-hidden rounded-[2.5rem] p-[2px]">
+                             <span className="absolute inset-0 bg-gradient-to-r from-emerald-400 via-emerald-600 to-emerald-400 rounded-[2.5rem] opacity-70 group-hover:opacity-100 transition-opacity animate-shimmer" />
+                             <div className="relative bg-[#020617]/90 backdrop-blur-xl rounded-[2.5rem] px-12 py-10 flex flex-col items-center justify-center gap-6 transition-all group-hover:bg-[#020617]/70">
+                               <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 group-hover:scale-110 transition-transform duration-500 group-hover:bg-emerald-500/20">
+                                 <Mic className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]" />
+                               </div>
+                               <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-200 to-emerald-500 group-hover:from-white group-hover:to-emerald-200 transition-all">ابدأ التلاوة</span>
+                             </div>
+                           </button>
                          ) : (
                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full space-y-8">
                              <div className="flex items-center gap-6 justify-center">
@@ -684,18 +712,25 @@ export default function RoomView({ user }: { user: any }) {
                        </div>
                      )}
                      {round.status === 'reviewing' && (
-                       <div className="space-y-6">
-                         <Star className="w-16 h-16 text-amber-400 mx-auto animate-pulse" />
-                         <h3 className="text-3xl font-black">مرحلة المراجعة</h3>
-                         {isHost && <button onClick={finishRound} className="px-10 py-4 bg-emerald-600 rounded-2xl font-bold">تثبيت النتائج</button>}
-                       </div>
+                       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 glass-dark p-10 rounded-[2.5rem] border border-white/10 relative overflow-hidden mt-6 w-full max-w-lg mx-auto">
+                         <div className="absolute inset-0 bg-amber-500/5 pointer-events-none" />
+                         <Star className="w-20 h-20 text-amber-400 mx-auto drop-shadow-[0_0_20px_rgba(251,191,36,0.6)] animate-pulse" />
+                         <div className="space-y-2">
+                           <h3 className="text-4xl font-black text-white drop-shadow-md pb-2">مرحلة التقييم</h3>
+                           <p className="text-slate-400">استمع للتلاوات وقيمها بعناية وعدل</p>
+                         </div>
+                         {isHost && <button onClick={finishRound} className="w-full py-5 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-2xl font-black text-xl hover:scale-[1.02] shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all">تثبيت النتائج وإعلان الفائز</button>}
+                       </motion.div>
                      )}
                      {round.status === 'finished' && (
-                       <div className="space-y-8">
-                         <Trophy className="w-20 h-20 text-amber-400 mx-auto" />
-                         <h2 className="text-4xl font-black">انتهت الجولة</h2>
-                         {isHost && <button onClick={startNewRound} className="px-12 py-5 bg-emerald-600 rounded-3xl font-black">جولة جديدة</button>}
-                       </div>
+                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-10 glass p-12 rounded-[3rem] border border-emerald-500/20 shadow-[0_0_60px_rgba(16,185,129,0.15)] mt-6 w-full max-w-lg mx-auto">
+                         <Trophy className="w-24 h-24 text-amber-400 mx-auto drop-shadow-[0_0_30px_rgba(251,191,36,0.6)] animate-bounce" />
+                         <div className="space-y-3">
+                           <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400">انتهت الجولة</h2>
+                           <p className="text-emerald-400 font-bold">بارك الله في جميع القراء</p>
+                         </div>
+                         {isHost && <button onClick={startNewRound} className="w-full py-5 bg-emerald-600 rounded-[2rem] font-black text-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] hover:shadow-[0_15px_40px_rgba(16,185,129,0.5)] hover:-translate-y-1 transition-all">بدء جولة جديدة</button>}
+                       </motion.div>
                      )}
                    </div>
                 </div>

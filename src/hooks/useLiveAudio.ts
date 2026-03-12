@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../firebase';
 
 export function useLiveAudio(roomId: string | undefined, user: any, isHost: boolean) {
   const [isLive, setIsLive] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
-  const [activeUsers, setActiveUsers] = useState<any[]>([]); // Track who is in the room
+  const [activeUsers, setActiveUsers] = useState<any[]>([]); 
   
   const channelRef = useRef<any>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const isLiveRef = useRef(false);
 
@@ -15,127 +16,37 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     isLiveRef.current = isLive;
   }, [isLive]);
 
-  useEffect(() => {
-    if (!roomId || !user) return;
-
-    // 1. Initialize Supabase Channel for the specific room
-    const channel = supabase.channel(`room:${roomId}`, {
-      config: {
-        presence: { key: user.uid },
-        broadcast: { self: false }
-      }
-    });
-    channelRef.current = channel;
-
-    // 2. Handle Presence (Who is in the room)
-    channel.on('presence', { event: 'sync' }, () => {
-      const newState = channel.presenceState();
-      const users: any[] = [];
-      for (const id in newState) {
-        // We get the first presence instance for each user
-        users.push(newState[id][0]);
-      }
-      setActiveUsers(users);
-    });
-
-    channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
-      console.log('User joined:', newPresences[0].name);
-      // Auto-connect WebRTC if live
-      if (isLiveRef.current && isHost) {
-        initiateCall(key);
-      }
-    });
-
-    channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-      console.log('User left:', leftPresences[0].name);
-      // Cleanup peer connection
-      const pc = peersRef.current.get(key);
-      if (pc) {
-        pc.close();
-        peersRef.current.delete(key);
-      }
-      setRemoteStreams(prev => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-    });
-
-    // 3. Handle WebRTC Signaling via Broadcast
-    channel.on('broadcast', { event: 'webrtc_signaling' }, async (payload) => {
-      const { type, target, sender, data } = payload.payload;
-      
-      // Ignore if not meant for us
-      if (target !== user.uid) return;
-
-      if (type === 'offer') {
-        const pc = createPeerConnection(sender);
-        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        
-        channel.send({
-          type: 'broadcast',
-          event: 'webrtc_signaling',
-          payload: { type: 'answer', target: sender, sender: user.uid, data: { sdp: answer } }
-        });
-      } 
-      else if (type === 'answer') {
-        const pc = peersRef.current.get(sender);
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-      } 
-      else if (type === 'ice-candidate') {
-        const pc = peersRef.current.get(sender);
-        if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ice candidate:", e));
-      }
-      else if (type === 'request-connection') {
-        if (isLiveRef.current && isHost) initiateCall(sender);
-      }
-      else if (type === 'toggle-live') {
-        setIsLive(data.isLive);
-        if (!data.isLive) stopLive(false); // Stop live but don't broadcast back
-      }
-    });
-
-    // 4. Subscribe and track presence
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ 
-          uid: user.uid, 
-          name: user.displayName, 
-          photoURL: user.photoURL,
-          isHost,
-          isReady: false, // Default state
-          joinedAt: new Date().toISOString()
-        });
-      }
-    });
-
-    return () => {
-      channel.unsubscribe();
-      peersRef.current.forEach(pc => pc.close());
-      localStreamRef.current?.getTracks().forEach(track => track.stop());
-    };
-  }, [roomId, user, isHost]); // Added isHost to deps
-
-  const updatePresence = async (metadata: any) => {
-    if (channelRef.current) {
-      await channelRef.current.track({
-        uid: user.uid,
-        name: user.displayName,
-        photoURL: user.photoURL,
-        isHost,
-        ...metadata
-      });
+  // Handle cleanup of a specific peer
+  const cleanupPeer = useCallback((userId: string) => {
+    const pc = peersRef.current.get(userId);
+    if (pc) {
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.oniceconnectionstatechange = null;
+      pc.close();
+      peersRef.current.delete(userId);
     }
-  };
+    pendingCandidatesRef.current.delete(userId);
+    setRemoteStreams(prev => {
+      if (!prev.has(userId)) return prev;
+      const next = new Map(prev);
+      next.delete(userId);
+      return next;
+    });
+  }, []);
 
-  const createPeerConnection = (targetUserId: string) => {
+  const createPeerConnection = useCallback((targetUserId: string) => {
+    // Cleanup existing if any
+    cleanupPeer(targetUserId);
+
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+      ],
+      iceCandidatePoolSize: 10,
     });
 
     pc.onicecandidate = (event) => {
@@ -154,10 +65,16 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     };
     
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        console.warn(`ICE connection failed for ${targetUserId}. Attempting reconnect...`);
-        if (isLiveRef.current && isHost) {
-          setTimeout(() => initiateCall(targetUserId), 2000);
+      const state = pc.iceConnectionState;
+      if (state === 'failed' || state === 'disconnected') {
+        console.warn(`ICE connection ${state} for ${targetUserId}.`);
+        if (state === 'failed' && isLiveRef.current && isHost) {
+          console.log(`Retrying connection to ${targetUserId}...`);
+          setTimeout(() => {
+            if (isLiveRef.current && channelRef.current?.presenceState()[targetUserId]) {
+              initiateCall(targetUserId);
+            }
+          }, 3000);
         }
       }
     };
@@ -178,36 +95,177 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
 
     peersRef.current.set(targetUserId, pc);
     return pc;
-  };
+  }, [user.uid, isHost, cleanupPeer]);
 
-  const initiateCall = async (targetUserId: string) => {
-    const pc = createPeerConnection(targetUserId);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    
-    channelRef.current?.send({
-      type: 'broadcast',
-      event: 'webrtc_signaling',
-      payload: { type: 'offer', target: targetUserId, sender: user.uid, data: { sdp: offer } }
+  const initiateCall = useCallback(async (targetUserId: string) => {
+    if (targetUserId === user.uid) return;
+    try {
+      const pc = createPeerConnection(targetUserId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'webrtc_signaling',
+        payload: { type: 'offer', target: targetUserId, sender: user.uid, data: { sdp: offer } }
+      });
+    } catch (err) {
+      console.error("Failed to initiate call:", err);
+    }
+  }, [user.uid, createPeerConnection]);
+
+  useEffect(() => {
+    if (!roomId || !user?.uid) return;
+
+    const channel = supabase.channel(`room:${roomId}`, {
+      config: {
+        presence: { key: user.uid },
+        broadcast: { ack: false }
+      }
     });
+
+    channelRef.current = channel;
+
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const users: any[] = [];
+      Object.keys(state).forEach(key => {
+        if (state[key][0]) users.push(state[key][0]);
+      });
+      setActiveUsers(users);
+    });
+
+    channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      if (key === user.uid) return;
+      console.log('User joined:', newPresences[0]?.name || key);
+      if (isLiveRef.current && isHost) {
+        initiateCall(key);
+      }
+    });
+
+    channel.on('presence', { event: 'leave' }, ({ key }) => {
+      console.log('User left:', key);
+      cleanupPeer(key);
+    });
+
+    channel.on('broadcast', { event: 'webrtc_signaling' }, async ({ payload }) => {
+      const { type, target, sender, data } = payload;
+      
+      if (target !== user.uid && target !== '*') return;
+      if (sender === user.uid) return;
+
+      try {
+        if (type === 'offer') {
+          const pc = createPeerConnection(sender);
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          
+          // Add any pending candidates
+          const pending = pendingCandidatesRef.current.get(sender) || [];
+          for (const cand of pending) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
+          }
+          pendingCandidatesRef.current.delete(sender);
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          channel.send({
+            type: 'broadcast',
+            event: 'webrtc_signaling',
+            payload: { type: 'answer', target: sender, sender: user.uid, data: { sdp: answer } }
+          });
+        } 
+        else if (type === 'answer') {
+          const pc = peersRef.current.get(sender);
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            const pending = pendingCandidatesRef.current.get(sender) || [];
+            for (const cand of pending) {
+              await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
+            }
+            pendingCandidatesRef.current.delete(sender);
+          }
+        } 
+        else if (type === 'ice-candidate') {
+          const pc = peersRef.current.get(sender);
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => {
+              if (pc.signalingState !== 'closed') console.error("Error adding ice candidate:", e);
+            });
+          } else {
+            // Queue candidate
+            const pending = pendingCandidatesRef.current.get(sender) || [];
+            pending.push(data.candidate);
+            pendingCandidatesRef.current.set(sender, pending);
+          }
+        }
+        else if (type === 'request-connection') {
+          if (isLiveRef.current && isHost) initiateCall(sender);
+        }
+        else if (type === 'toggle-live') {
+          setIsLive(data.isLive);
+          if (!data.isLive) {
+            localStreamRef.current?.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+            peersRef.current.forEach(pc => pc.close());
+            peersRef.current.clear();
+            setRemoteStreams(new Map());
+          }
+        }
+      } catch (err) {
+        console.error("Signaling error:", err);
+      }
+    });
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        channel.track({ 
+          uid: user.uid, 
+          name: user.displayName || 'قارئ', 
+          photoURL: user.photoURL,
+          isHost,
+          isReady: false,
+          joinedAt: new Date().toISOString()
+        });
+      }
+    });
+
+    return () => {
+      channel.unsubscribe();
+      peersRef.current.forEach(pc => pc.close());
+      peersRef.current.clear();
+      localStreamRef.current?.getTracks().forEach(track => track.stop());
+    };
+  }, [roomId, user.uid, user.displayName, user.photoURL, isHost, initiateCall, cleanupPeer, createPeerConnection]);
+
+  const updatePresence = async (metadata: any) => {
+    if (channelRef.current) {
+      await channelRef.current.track({
+        uid: user.uid,
+        name: user.displayName,
+        photoURL: user.photoURL,
+        isHost,
+        ...metadata
+      });
+    }
   };
 
   const startLive = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       localStreamRef.current = stream;
       setIsLive(true);
       
-      // Notify everyone room is live
       channelRef.current?.send({
         type: 'broadcast',
         event: 'webrtc_signaling',
         payload: { type: 'toggle-live', target: '*', sender: user.uid, data: { isLive: true } }
       });
 
-      // Initiate calls to all currently active users
-      activeUsers.forEach(u => {
-        if (u.uid !== user.uid) initiateCall(u.uid);
+      // Map presence to uid list
+      const state = channelRef.current?.presenceState() || {};
+      Object.keys(state).forEach(id => {
+        if (id !== user.uid) initiateCall(id);
       });
     } catch (err) {
       console.error("Error accessing microphone:", err);
@@ -234,11 +292,10 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
 
   const joinLive = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       localStreamRef.current = stream;
       setIsLive(true);
       
-      // Ask host to connect to us
       channelRef.current?.send({
         type: 'broadcast',
         event: 'webrtc_signaling',
@@ -249,21 +306,5 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     }
   };
 
-  return { 
-    isLive, 
-    startLive, 
-    stopLive, 
-    joinLive, 
-    remoteStreams, 
-    activeUsers, 
-    updatePresence 
-  } as {
-    isLive: boolean;
-    startLive: () => Promise<void>;
-    stopLive: (broadcast?: boolean) => void;
-    joinLive: () => Promise<void>;
-    remoteStreams: Map<string, MediaStream>;
-    activeUsers: any[];
-    updatePresence: (metadata: any) => Promise<void>;
-  };
+  return { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence };
 }

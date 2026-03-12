@@ -3,7 +3,7 @@
 @theme {
   --font-sans: "Cairo", "Tajawal", ui-sans-serif, system-ui, sans-serif;
   --font-arabic: "Aref Ruqaa", "Amiri", serif;
-  --font-quran: "Amiri", "Aref Ruqaa", serif;
+  --font-quran: "Amiri Quran", "Amiri", serif;
   
   --color-gold-200: #fde68a;
   --color-gold-300: #fcd34d;
@@ -152,9 +152,9 @@
 }
 
 .font-quran {
-  font-family: 'Amiri', 'Aref Ruqaa', serif;
-  font-size: 1.15em;
-  line-height: 2;
+  font-family: 'Amiri Quran', 'Amiri', serif;
+  font-size: 1.5em; /* Increased size for prestige */
+  line-height: 2.2;
 }
 
 /* ─── Custom Scrollbar ──────────────────────────────────── */
