@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, getDocs, arrayUnion, arrayRemove } from '../firebase';
+import { db, doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, getDocs, arrayUnion, arrayRemove } from '../firebase';
 import { Room, Round, Recording, User } from '../types';
 import { Mic, Square, Play, Download, Users, Settings, Loader2, Trophy, Clock, Sparkles, X, Heart, Volume2, Star, Share2, Check, Shuffle, BookOpen, Radio, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
