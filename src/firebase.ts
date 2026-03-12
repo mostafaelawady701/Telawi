@@ -35,6 +35,11 @@ export const logout = async () => {
     window.location.reload();
 };
 
+export const syncUserScore = async (userId: string) => {
+    const { error } = await supabase.rpc('sync_user_score', { user_id: userId });
+    if (error) console.error("Error calling sync_user_score RPC:", error);
+};
+
 const syncUserProfile = async (uid: string, name: string, isAnon: boolean) => {
     const { error } = await supabase.from('users').upsert({
         id: uid,
@@ -151,6 +156,7 @@ export const query = (c: any) => c;
 export const orderBy = () => ({});
 export const limit = () => ({});
 export const arrayUnion = (val: any) => val;
+export const arrayRemove = (val: any) => val;
 export const getDocs = async (collRef: any) => {
     const { data } = await supabase.from(collRef.table).select().order('created_at', { ascending: false });
     return { docs: (data || []).map(d => ({ id: d.id, data: () => fromSnake(d) })), empty: (data || []).length === 0 };
