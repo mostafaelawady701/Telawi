@@ -9,6 +9,11 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
   const channelRef = useRef<any>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
+  const isLiveRef = useRef(false);
+
+  useEffect(() => {
+    isLiveRef.current = isLive;
+  }, [isLive]);
 
   useEffect(() => {
     if (!roomId || !user) return;
@@ -36,7 +41,7 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
       console.log('User joined:', newPresences[0].name);
       // Auto-connect WebRTC if live
-      if (isLive && isHost) {
+      if (isLiveRef.current && isHost) {
         initiateCall(key);
       }
     });
@@ -81,10 +86,10 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
       } 
       else if (type === 'ice-candidate') {
         const pc = peersRef.current.get(sender);
-        if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.error("Error adding ice candidate:", e));
       }
       else if (type === 'request-connection') {
-        if (isLive && isHost) initiateCall(sender);
+        if (isLiveRef.current && isHost) initiateCall(sender);
       }
       else if (type === 'toggle-live') {
         setIsLive(data.isLive);
@@ -127,7 +132,10 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
 
   const createPeerConnection = (targetUserId: string) => {
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     });
 
     pc.onicecandidate = (event) => {
@@ -142,6 +150,15 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
             data: { candidate: event.candidate } 
           }
         });
+      }
+    };
+    
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        console.warn(`ICE connection failed for ${targetUserId}. Attempting reconnect...`);
+        if (isLiveRef.current && isHost) {
+          setTimeout(() => initiateCall(targetUserId), 2000);
+        }
       }
     };
 

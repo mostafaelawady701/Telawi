@@ -8,8 +8,16 @@ import Waveform from '../components/Waveform';
 import RatingModal from '../components/RatingModal';
 import RecordingsCarousel from '../components/RecordingsCarousel';
 import confetti from 'canvas-confetti';
-
+import { useToast } from '../components/Toast';
 import { useLiveAudio } from '../hooks/useLiveAudio';
+
+const THEME_GLOWS: Record<string, string> = {
+  emerald: 'rgba(16,185,129,0.3)',
+  blue:    'rgba(59,130,246,0.3)',
+  purple:  'rgba(168,85,247,0.3)',
+  rose:    'rgba(244,63,94,0.3)',
+  amber:   'rgba(245,158,11,0.3)',
+};
 
 export default function RoomView({ user }: { user: any }) {
   const { roomId } = useParams<{ roomId: string }>();
@@ -23,6 +31,7 @@ export default function RoomView({ user }: { user: any }) {
   const [round, setRound] = useState<Round | null>(null);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const latestRoomRef = useRef<Room | null>(null);
+  const { addToast } = useToast();
 
   useEffect(() => {
     latestRoomRef.current = room;
@@ -76,6 +85,22 @@ export default function RoomView({ user }: { user: any }) {
       }
     };
   }, [roomId, user.uid, navigate, isHost, activeUsers.length]);
+
+  // Clean up participant on unmount
+  useEffect(() => {
+    return () => {
+      // Disconnect handled by useLiveAudio, but we should make sure
+      // we untrack explicitly if navigating away
+      if (typeof updatePresence === 'function') {
+        updatePresence({ isReady: false, status: 'leaving' });
+      }
+      if (roomId && user?.uid) {
+         updateDoc(doc(db, 'rooms', roomId), {
+           participants: arrayRemove(user.uid)
+         }).catch(console.error);
+      }
+    };
+  }, [roomId, user?.uid]);
 
   useEffect(() => {
     setParticipants(activeUsers.map(u => ({
@@ -153,8 +178,10 @@ export default function RoomView({ user }: { user: any }) {
         theme: { color: editThemeColor }
       });
       setIsSettingsOpen(false);
+      addToast("تم حفظ الإعدادات بنجاح", 'success');
     } catch (error) {
       console.error("Error saving settings:", error);
+      addToast("فشل حفظ الإعدادات", 'error');
     }
   };
 
@@ -174,8 +201,11 @@ export default function RoomView({ user }: { user: any }) {
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
+      addToast("تم نسخ رابط المجلس!", 'success');
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {}
+    } catch (err) {
+      addToast("فشل نسخ الرابط", 'error');
+    }
   };
 
   const handleLike = async (recording: Recording) => {
@@ -268,7 +298,6 @@ export default function RoomView({ user }: { user: any }) {
         surahName,
         ayahNumber,
         status: 'countdown',
-        countdownStartTime: Date.now() + 5000,
         createdAt: Date.now()
       });
 
@@ -276,8 +305,9 @@ export default function RoomView({ user }: { user: any }) {
         status: 'playing',
         currentRoundId: roundRef.id
       });
+      addToast("بدأت الجولة الجديدة!", 'success');
     } catch (error: any) {
-      alert(error.message);
+      addToast(error.message || "حدث خطأ أثناء بدء الجولة", 'error');
     } finally {
       setIsStartingRound(false);
     }
@@ -285,18 +315,24 @@ export default function RoomView({ user }: { user: any }) {
 
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
   useEffect(() => {
-    if (round?.status === 'countdown' && round.countdownStartTime) {
+    if (round?.status === 'countdown') {
+      const endTime = Date.now() + 5000;
+      setLocalCountdown(5);
       const interval = setInterval(async () => {
-        const remaining = Math.max(0, Math.ceil((round.countdownStartTime! - Date.now()) / 1000));
+        const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
         setLocalCountdown(remaining);
-        if (remaining === 0 && isHost) {
+        if (remaining === 0) {
           clearInterval(interval);
-          await updateDoc(doc(db, 'rooms', roomId!, 'rounds', round.id), { status: 'recording' });
+          if (isHost && roomId && round?.id) {
+            await updateDoc(doc(db, 'rooms', roomId, 'rounds', round.id), { status: 'recording' }).catch(console.error);
+          }
         }
       }, 500);
       return () => clearInterval(interval);
+    } else {
+      setLocalCountdown(null);
     }
-  }, [round?.status, round?.countdownStartTime, isHost, roomId, round?.id]);
+  }, [round?.status, isHost, roomId, round?.id]);
 
   const claimRecording = async () => {
     if (!roomId || !round || round.status !== 'recording' || round.activeRecorderId) return;
@@ -361,87 +397,207 @@ export default function RoomView({ user }: { user: any }) {
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime(p => p + 1), 1000);
+      
+      timerRef.current = setInterval(() => {
+        setRecordingTime(p => p + 1);
+      }, 1000);
+
+      // Visualizer loop
+      const drawVisualizer = () => {
+        if (!canvasRef.current || !analyserRef.current || !isRecording) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteTimeDomainData(dataArray);
+
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.2)'; // Tailwind slate-950 with opacity for trailing effect
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#10b981'; // Tailwind emerald-500
+        ctx.beginPath();
+        
+        const sliceWidth = canvas.width * 1.0 / bufferLength;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = v * canvas.height / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+        
+        animationRef.current = requestAnimationFrame(drawVisualizer);
+      };
+      
+      drawVisualizer();
+
     } catch (e) {
-      alert("تعذر الوصول للميكروفون");
+      addToast("تعذر الوصول للميكروفون، يرجى التأكد من الصلاحيات", 'error');
     }
   };
+
+  useEffect(() => {
+    if (isRecording && recordingTime >= (room?.recordingDuration || 60)) {
+       stopRecording();
+    }
+  }, [isRecording, recordingTime, room?.recordingDuration]);
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
     }
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
   };
 
-  if (loading || !room) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-500"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+  if (loading || !room) return (
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+      <div className="text-center space-y-4">
+        <div className="relative">
+          <div className="w-16 h-16 border-2 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin mx-auto" />
+          <div className="absolute inset-0 w-16 h-16 mx-auto bg-emerald-500/5 rounded-full blur-xl" />
+        </div>
+        <p className="text-slate-600 text-sm font-bold">جارٍ تحميل المجلس...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden">
+    <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden">
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/10 blur-[150px] rounded-full" />
+        <div className="absolute top-[-15%] right-[-10%] w-[60%] h-[60%] bg-emerald-600/8 blur-[180px] rounded-full animate-float-slow" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-[45%] h-[45%] bg-amber-600/5 blur-[150px] rounded-full animate-float-slow" style={{ animationDelay: '5s' }} />
+        <div className="absolute inset-0 islamic-pattern" />
       </div>
 
       <div className="relative z-10 flex flex-col flex-1">
-        <header className="sticky top-0 z-50 glass border-b border-white/10 h-20 px-6">
-          <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl ${theme.bg} flex items-center justify-center shadow-lg`}>
-                <Radio className="text-white w-6 h-6 animate-pulse" />
+        <header className="sticky top-0 z-50 glass-dark border-b border-white/6 py-3">
+          <div className="max-w-[1600px] mx-auto px-6 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className={`w-10 h-10 rounded-2xl ${theme.bg} flex items-center justify-center shadow-lg shrink-0`} style={{ boxShadow: `0 0 20px ${THEME_GLOWS[room?.theme?.color || 'emerald']}` }}>
+                <Radio className="text-white w-5 h-5 animate-pulse" />
               </div>
               <div>
-                <h1 className="text-xl font-bold bg-gradient-to-l from-white to-slate-400 bg-clip-text text-transparent">{room.name}</h1>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+                <h1 className="text-lg font-black text-white leading-none mb-0.5">{room.name}</h1>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                   <Users className="w-3 h-3" />
-                  <span>متصل {activeUsers.length}</span>
+                  <span>{activeUsers.length} متصل</span>
+                  {isLive && (
+                    <span className="flex items-center gap-1 text-rose-400 font-bold mr-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                      مباشر
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <button onClick={isHost ? (isLive ? stopLive : startLive) : joinLive} className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${isLive ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-white/5 border-white/10'}`}>
-                <Radio className="w-4 h-4" />
-                <span className="text-xs font-bold">{isLive ? 'مباشر' : 'بث'}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={isHost ? (isLive ? stopLive : startLive) : joinLive}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all text-xs font-bold ${
+                  isLive
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/15'
+                    : 'glass border-white/8 text-slate-300 hover:border-emerald-500/30 hover:text-emerald-400'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5" />
+                {isLive ? 'إيقاف البث' : 'بدء البث'}
               </button>
-              <button onClick={handleShare} className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
-                {copied ? <Check className="w-5 h-5 text-emerald-400" /> : <Share2 className="w-5 h-5" />}
+              <button
+                onClick={handleShare}
+                className="p-2.5 rounded-xl glass border border-white/8 hover:border-emerald-500/30 hover:text-emerald-400 transition-all text-slate-400"
+              >
+                {copied ? <Check className="w-4.5 h-4.5 text-emerald-400 w-[18px] h-[18px]" /> : <Share2 className="w-[18px] h-[18px]" />}
               </button>
-              {isHost && <button onClick={() => setIsSettingsOpen(true)} className="p-2.5 rounded-xl bg-white/5"><Settings className="w-5 h-5" /></button>}
-              <button onClick={() => navigate('/dashboard')} className="px-4 py-2 rounded-xl bg-white/5 text-sm font-medium">خروج</button>
+              {isHost && (
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="p-2.5 rounded-xl glass border border-white/8 hover:border-white/20 transition-all text-slate-400"
+                >
+                  <Settings className="w-[18px] h-[18px]" />
+                </button>
+              )}
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="px-4 py-2.5 rounded-xl glass border border-white/8 text-slate-400 hover:text-white hover:border-white/20 text-xs font-bold transition-all"
+              >
+                خروج
+              </button>
             </div>
           </div>
         </header>
 
         <main className="max-w-[1600px] mx-auto w-full px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
           {/* Sidebar */}
-          <div className="lg:col-span-3 space-y-6">
-            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="glass-dark rounded-[2.5rem] p-6 border border-white/5">
-              <h3 className="text-xl font-black text-amber-400 flex items-center gap-3 mb-6"><Users /> الحضور</h3>
-              <div className="space-y-3">
+          <div className="lg:col-span-3 space-y-5">
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="glass-dark rounded-[2rem] p-5 border border-white/6">
+              <h3 className="text-base font-black text-slate-300 flex items-center gap-2.5 mb-5">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/15 flex items-center justify-center">
+                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                </div>
+                الحضور
+                <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/15 text-emerald-400 text-[10px] font-black">{activeUsers.length}</span>
+              </h3>
+              <div className="space-y-2">
                 {activeUsers.map(p => (
-                  <div key={p.uid} className={`flex items-center gap-3 p-3 rounded-2xl border ${p.isReady ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-transparent'}`}>
-                    <img src={p.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.uid}`} className="w-10 h-10 rounded-xl" alt="" />
-                    <span className="flex-1 text-sm font-bold truncate">{p.name || 'قارئ'}</span>
-                    {p.isReady && <Check className="w-4 h-4 text-emerald-400" />}
+                  <div key={p.uid} className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${
+                    p.isReady
+                      ? 'bg-emerald-500/8 border-emerald-500/15'
+                      : 'bg-white/3 border-white/5 hover:bg-white/5'
+                  }`}>
+                    <img src={p.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.uid}`} className="w-9 h-9 rounded-xl object-cover" alt="" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate text-white">{p.name || 'قارئ'}</p>
+                      {p.isHost && <p className="text-[10px] text-amber-400 font-bold">المضيف</p>}
+                    </div>
+                    {p.isReady && (
+                      <div className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                        <Check className="w-2.5 h-2.5 text-emerald-400" />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               {room?.status === 'waiting' && (
-                <button onClick={handleReady} className={`w-full mt-6 py-4 rounded-2xl font-black transition-all ${isReadyLocal ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
-                  {isReadyLocal ? 'أنا مستعد' : 'تأكيد الاستعداد'}
-                </button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handleReady}
+                  className={`w-full mt-5 py-3.5 rounded-xl font-black text-sm transition-all duration-200 ${
+                    isReadyLocal
+                      ? 'text-white shadow-[0_8px_24px_rgba(16,185,129,0.3)]'
+                      : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200 border border-white/8'
+                  }`}
+                  style={isReadyLocal ? { background: 'linear-gradient(135deg, #059669, #10b981)' } : {}}
+                >
+                  {isReadyLocal ? '✓ أنا مستعد' : 'تأكيد الاستعداد'}
+                </motion.button>
               )}
             </motion.div>
 
             {leaderboard.length > 0 && (
-              <div className="glass-dark rounded-[2.5rem] p-6 border border-white/5">
-                <h3 className="text-xl font-black text-amber-400 flex items-center gap-3 mb-6"><Trophy /> الصدارة</h3>
-                <div className="space-y-3">
+              <div className="glass-dark rounded-[2rem] p-5 border border-white/6">
+                <h3 className="text-base font-black text-slate-300 flex items-center gap-2.5 mb-4">
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/15 flex items-center justify-center">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  الصدارة
+                </h3>
+                <div className="space-y-2">
                   {leaderboard.map((u, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 glass rounded-2xl">
-                       <span className="font-bold text-sm">{u.name}</span>
-                       <span className="text-amber-400 font-black">{u.totalScore}</span>
+                    <div key={i} className="flex items-center justify-between p-3 glass rounded-xl border border-white/4">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-sm font-black text-slate-600 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</span>
+                        <span className="font-bold text-sm text-white">{u.name}</span>
+                      </div>
+                      <span className="text-amber-400 font-black text-sm">{u.totalScore}</span>
                     </div>
                   ))}
                 </div>
@@ -451,7 +607,7 @@ export default function RoomView({ user }: { user: any }) {
 
           {/* Main Stage */}
           <div className="lg:col-span-6 flex flex-col gap-6">
-            <motion.div layout className="glass-dark rounded-[3rem] p-10 min-h-[500px] flex flex-col items-center justify-center relative border border-white/10 shadow-2xl">
+            <motion.div layout className="glass-dark rounded-[2.5rem] p-8 min-h-[500px] flex flex-col items-center justify-center relative border border-white/6 shadow-2xl card-glow-emerald">
               {room.status === 'waiting' ? (
                 <div className="text-center space-y-8 w-full max-w-md">
                    <div className={`w-32 h-32 mx-auto rounded-[3rem] ${theme.lightBg} flex items-center justify-center shadow-2xl`}>
@@ -460,14 +616,30 @@ export default function RoomView({ user }: { user: any }) {
                    <h2 className="text-4xl font-black">المجلس منعقد</h2>
                    <p className="text-slate-400">بانتظار اكتمال القراء وبدء الجولة من المضيف</p>
                    {isHost && (
-                     <div className="space-y-6 pt-6">
-                       <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl">
-                         <button onClick={() => setVerseSelectionMode('random')} className={`flex-1 py-3 rounded-xl text-xs font-bold ${verseSelectionMode === 'random' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>آلي</button>
-                         <button onClick={() => setVerseSelectionMode('manual')} className={`flex-1 py-3 rounded-xl text-xs font-bold ${verseSelectionMode === 'manual' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>يدوي</button>
+                       <div className="space-y-6 pt-6">
+                         <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl mb-4">
+                           <button onClick={() => setVerseSelectionMode('random')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-colors ${verseSelectionMode === 'random' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-white'}`}>اختيار آلي</button>
+                           <button onClick={() => setVerseSelectionMode('manual')} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-colors ${verseSelectionMode === 'manual' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-white'}`}>تحديد يدوي</button>
+                         </div>
+                         
+                         {verseSelectionMode === 'manual' && (
+                           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="flex gap-4 mb-6">
+                             <div className="flex-1 space-y-2 text-right">
+                               <label className="text-xs font-bold text-slate-400">رقم السورة</label>
+                               <input type="number" min="1" max="114" value={manualSurah} onChange={e => setManualSurah(Number(e.target.value))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-center focus:border-emerald-500 outline-none" />
+                             </div>
+                             <div className="flex-1 space-y-2 text-right">
+                               <label className="text-xs font-bold text-slate-400">رقم الآية</label>
+                               <input type="number" min="1" max="286" value={manualAyah} onChange={e => setManualAyah(Number(e.target.value))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-center focus:border-emerald-500 outline-none" />
+                             </div>
+                           </motion.div>
+                         )}
+                         
+                         <button onClick={startNewRound} disabled={isStartingRound} className="w-full py-6 rounded-[2rem] bg-emerald-600 text-white font-black text-2xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] hover:shadow-[0_15px_40px_rgba(16,185,129,0.5)] hover:-translate-y-1 transition-all disabled:opacity-50">
+                           {isStartingRound ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : 'إطلاق الجولة'}
+                         </button>
                        </div>
-                       <button onClick={startNewRound} disabled={isStartingRound} className="w-full py-6 rounded-[2rem] bg-emerald-600 text-white font-black text-2xl shadow-xl hover:scale-[1.02] transition-all">إطلاق الجولة</button>
-                     </div>
-                   )}
+                     )}
                 </div>
               ) : round ? (
                 <div className="w-full text-center space-y-12">
@@ -490,9 +662,13 @@ export default function RoomView({ user }: { user: any }) {
                                <div className="text-right"><p className="text-emerald-400 text-xs font-bold">يتلو الآن</p><h4 className="text-2xl font-black">{activeUsers.find(u => u.uid === round.activeRecorderId)?.name || 'قارئ'}</h4></div>
                              </div>
                              {round.activeRecorderId === user.uid && (
-                               <div className="space-y-6">
-                                 <div className="text-5xl font-mono font-black text-rose-500">{Math.floor(recordingTime/60)}:{(recordingTime%60).toString().padStart(2,'0')}</div>
-                                 <button onClick={stopRecording} className="px-12 py-5 rounded-2xl bg-rose-600 font-black text-xl flex items-center gap-3 mx-auto"><Square /> إنهاء</button>
+                               <div className="space-y-8 w-full">
+                                 <div className="text-5xl font-mono font-black text-amber-500 animate-pulse">{Math.floor(recordingTime/60)}:{(recordingTime%60).toString().padStart(2,'0')}</div>
+                                 <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                                   <div className="h-full bg-emerald-500 transition-all duration-1000 ease-linear" style={{ width: `${(recordingTime / (room.recordingDuration || 60)) * 100}%` }}></div>
+                                 </div>
+                                 <canvas ref={canvasRef} width="600" height="150" className="w-full h-24 bg-black/20 rounded-2xl border border-white/5"></canvas>
+                                 <button onClick={stopRecording} className="px-12 py-5 rounded-3xl bg-rose-600 font-black text-xl flex items-center justify-center gap-3 w-full shadow-[0_10px_30px_rgba(225,29,72,0.3)] hover:scale-105 transition-all"><Square className="fill-current" /> إنهاء التلاوة</button>
                                </div>
                              )}
                            </motion.div>
@@ -520,26 +696,55 @@ export default function RoomView({ user }: { user: any }) {
           </div>
 
           {/* Recordings Feed */}
-          <div className="lg:col-span-3 space-y-6 overflow-y-auto no-scrollbar max-h-[calc(100vh-160px)]">
-             <div className="flex items-center justify-between px-2">
-               <h3 className="text-lg font-black flex items-center gap-2"><Volume2 /> الأصوات</h3>
-               <div className="flex bg-white/5 rounded-xl p-1">
-                 {['time', 'score'].map(s => <button key={s} onClick={() => setSortBy(s as any)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${sortBy === s ? 'bg-white/10 text-white' : 'text-slate-500'}`}>{s === 'time' ? 'الأحدث' : 'التقييم'}</button>)}
+          <div className="lg:col-span-3 space-y-4 overflow-y-auto no-scrollbar max-h-[calc(100vh-160px)]">
+             <div className="flex items-center justify-between px-1">
+               <h3 className="text-base font-black text-slate-300 flex items-center gap-2.5">
+                 <div className="w-7 h-7 rounded-xl bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center">
+                   <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                 </div>
+                 الأصوات
+               </h3>
+               <div className="flex glass rounded-xl p-1 border border-white/6">
+                 {['time', 'score'].map(s => (
+                   <button key={s} onClick={() => setSortBy(s as any)}
+                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${sortBy === s ? 'bg-white/10 text-white' : 'text-slate-600 hover:text-slate-400'}`}
+                   >{s === 'time' ? 'الأحدث' : 'التقييم'}</button>
+                 ))}
                </div>
              </div>
+             
              <AnimatePresence>
                {recordings.map(rec => (
-                 <motion.div key={rec.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-dark p-5 rounded-3xl border border-white/5 space-y-4">
+                 <motion.div key={rec.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-dark p-4 rounded-2xl border border-white/6 space-y-3 hover:border-white/10 transition-colors">
                     <div className="flex items-center justify-between">
-                       <span className="text-sm font-bold">{rec.userName}</span>
-                       {rec.score !== undefined && <span className="px-2 py-1 bg-amber-500/10 text-amber-400 text-xs font-black rounded-lg">{rec.score}</span>}
+                       <div className="flex items-center gap-2.5">
+                         <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${rec.userId}`} className="w-8 h-8 rounded-xl" alt="" />
+                         <span className="text-sm font-bold text-white">{rec.userName}</span>
+                       </div>
+                       {rec.score !== undefined && (
+                         <span className="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-xs font-black rounded-lg border border-amber-500/15">{rec.score}</span>
+                       )}
                     </div>
-                    <audio src={rec.audioData} className="w-full h-8 opacity-70" controls />
-                    <div className="flex items-center justify-between pt-2">
-                       <button onClick={() => handleLike(rec)} className={`flex items-center gap-2 text-xs font-bold ${rec.likes?.includes(user.uid) ? 'text-rose-400' : 'text-slate-500'}`}><Heart className="w-4 h-4" /> {rec.likes?.length || 0}</button>
+                    <Waveform audioUrl={rec.audioData} />
+                    <div className="flex items-center justify-between">
+                       <button
+                         onClick={() => handleLike(rec)}
+                         className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${
+                           rec.likes?.includes(user?.uid) ? 'text-rose-400' : 'text-slate-600 hover:text-slate-400'
+                         }`}
+                       >
+                         <Heart className={`w-3.5 h-3.5 ${rec.likes?.includes(user?.uid) ? 'fill-current' : ''}`} />
+                         {rec.likes?.length || 0}
+                       </button>
                        {isHost && round?.status === 'reviewing' && (
-                         <div className="flex items-center gap-1">
-                           {[1,2,3,4,5].map(i => <button key={i} onClick={() => handleScore(rec, i*20)} className={`p-1 ${ (rec.score || 0) >= i*20 ? 'text-amber-400' : 'text-slate-700' }`}><Star className="w-4 h-4 fill-current" /></button>)}
+                         <div className="flex items-center gap-0.5">
+                           {[1,2,3,4,5].map(i => (
+                             <button key={i} onClick={() => handleScore(rec, i*20)}
+                               className={`p-0.5 transition-transform hover:scale-125 ${ (rec.score || 0) >= i*20 ? 'text-amber-400' : 'text-slate-700 hover:text-slate-500' }`}
+                             >
+                               <Star className={`w-3.5 h-3.5 ${ (rec.score || 0) >= i*20 ? 'fill-current drop-shadow-[0_0_4px_rgba(251,191,36,0.5)]' : '' }`} />
+                             </button>
+                           ))}
                          </div>
                        )}
                     </div>
@@ -554,13 +759,21 @@ export default function RoomView({ user }: { user: any }) {
       <AnimatePresence>
         {isSettingsOpen && (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 max-w-lg w-full shadow-2xl space-y-8">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 max-w-lg w-full shadow-2xl space-y-8">
                <div className="flex justify-between items-center"><h2 className="text-3xl font-black">الإعدادات</h2><button onClick={() => setIsSettingsOpen(false)}><X /></button></div>
                <div className="space-y-6">
-                 <div><p className="text-sm font-bold mb-4">صدى المسجد</p><button onClick={() => setEchoEnabled(!echoEnabled)} className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 transition-all ${echoEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-white/5 border border-white/10 text-slate-500'}`}>{echoEnabled ? <Volume2 /> : <Mic />} {echoEnabled ? 'مفعل' : 'معطل'}</button></div>
-                 <div><p className="text-sm font-bold mb-4">لون السمة</p><div className="flex gap-4">{['emerald', 'blue', 'purple', 'rose'].map(c => <button key={c} onClick={() => setEditThemeColor(c)} className={`w-10 h-10 rounded-full ${c === 'emerald' ? 'bg-emerald-500' : c === 'blue' ? 'bg-blue-500' : c === 'purple' ? 'bg-purple-500' : 'bg-rose-500'} ${editThemeColor === c ? 'ring-4 ring-white' : ''}`} />)}</div></div>
+                 <div>
+                   <p className="text-sm font-bold mb-4">صدى المسجد</p>
+                   <button onClick={() => setEchoEnabled(!echoEnabled)} className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 transition-all ${echoEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-white/5 border border-white/10 text-slate-500'}`}>
+                     {echoEnabled ? <Volume2 /> : <Mic />} {echoEnabled ? 'مفعل' : 'معطل'}
+                   </button>
+                 </div>
+                 <div>
+                   <p className="text-sm font-bold mb-4">لون السمة</p>
+                   <div className="flex gap-4">{['emerald', 'blue', 'purple', 'rose'].map(c => <button key={c} onClick={() => setEditThemeColor(c)} className={`w-10 h-10 rounded-full ${c === 'emerald' ? 'bg-emerald-500' : c === 'blue' ? 'bg-blue-500' : c === 'purple' ? 'bg-purple-500' : 'bg-rose-500'} ${editThemeColor === c ? 'ring-4 ring-white' : ''}`} />)}</div>
+                 </div>
                </div>
-               <button onClick={saveSettings} className="w-full py-5 rounded-2xl bg-emerald-600 font-black text-xl">حفظ</button>
+               <button onClick={saveSettings} className="w-full py-5 rounded-2xl bg-emerald-600 font-black text-xl hover:bg-emerald-500 transition-colors">حفظ</button>
             </motion.div>
           </div>
         )}

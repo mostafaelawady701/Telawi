@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-export default function Waveform({ audioUrl }: { audioUrl: string }) {
+export default function Waveform({ audioUrl, progress = 0 }: { audioUrl: string, progress?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [peaks, setPeaks] = useState<number[]>([]);
 
@@ -42,21 +42,30 @@ export default function Waveform({ audioUrl }: { audioUrl: string }) {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#059669'; // emerald-600
     
     const barWidth = canvas.width / peaks.length;
+    const barCount = peaks.length;
+
     peaks.forEach((peak, i) => {
       const barHeight = Math.max(2, peak * canvas.height); // min height 2px
-      ctx.fillRect(i * barWidth, canvas.height / 2 - barHeight / 2, barWidth - 1, barHeight);
+      const x = i * barWidth;
+      // Draw progress
+      ctx.fillStyle = i < (progress / 100) * barCount ? '#10b981' : 'rgba(16, 185, 129, 0.2)'; // Emerald-500 or Emerald-500/20
+      ctx.fillRect(x, Math.max(0, canvas.height - barHeight), barWidth - 2, Math.max(2, barHeight));
     });
-  }, [peaks]);
+  }, [peaks, progress]); // Added progress to dependencies
 
   return (
-    <div className="w-full h-16 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 flex items-center justify-center">
+    <div className="w-full h-16 rounded-lg overflow-hidden relative flex items-center justify-center">
       {peaks.length === 0 ? (
         <span className="text-xs text-slate-400 animate-pulse">جاري تحليل الصوت...</span>
       ) : (
-        <canvas ref={canvasRef} width={600} height={64} className="w-full h-full opacity-80" />
+        <canvas
+        ref={canvasRef}
+        width={300}
+        height={60}
+        className="w-full h-full"
+      />
       )}
     </div>
   );

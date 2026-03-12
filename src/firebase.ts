@@ -98,61 +98,139 @@ export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void)
 };
 
 // --- DATA SYSTEM (Service Layer) ---
-export const db: any = { isSupabase: true };
+export const db = { isSupabase: true };
 
-export const collection = (_db: any, ...path: string[]) => ({ table: path[path.length - 1] });
-export const doc = (_db: any, ...path: string[]) => ({ table: path[path.length - 2], id: path[path.length - 1] });
+// Types
+type CollectionPath = { table: string };
+type DocPath = { table: string, id: string };
 
-// Standardized Add (with error tracking)
-export const addDoc = async (collRef: any, data: any) => {
+export const collection = (_db: any, ...path: string[]): CollectionPath => ({ table: path[path.length - 1] });
+export const doc = (_db: any, ...path: string[]): DocPath => ({ table: path[path.length - 2], id: path[path.length - 1] });
+
+// --- OFFLINE QUEUE & RETRY LOGIC ---
+const offlineQueue: Array<() => Promise<void>> = [];
+let isOnline = navigator.onLine;
+
+window.addEventListener('online', async () => {
+    isOnline = true;
+    while (offlineQueue.length > 0) {
+        const mutation = offlineQueue.shift();
+        if (mutation) await mutation().catch(console.error);
+    }
+});
+window.addEventListener('offline', () => { isOnline = false; });
+
+const executingWithRetry = async <T>(operation: () => Promise<T>, maxRetries = 3): Promise<T> => {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+        try {
+            if (!isOnline) throw new Error('Offline (queued)');
+            return await operation();
+        } catch (error: any) {
+            if (error.message === 'Offline (queued)' || error.message?.includes('Failed to fetch')) {
+                if (attempt === maxRetries - 1) throw error;
+                await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt))); // Exponential backoff
+                attempt++;
+            } else {
+                throw error; // Not a transient network error
+            }
+        }
+    }
+    throw new Error('Max retries reached');
+};
+
+// Standardized Add (with error tracking & validation)
+export const addDoc = async (collRef: CollectionPath, data: Record<string, any>) => {
+    if (!data || Object.keys(data).length === 0) throw new Error("Cannot add empty document");
+
     const { table } = collRef;
     const finalData = { ...data };
     delete finalData.id;
     delete finalData.uid;
 
-    const { data: inserted, error } = await supabase.from(table).insert([finalData]).select().single();
-    if (error) {
-        console.error(`[Backend Error] Insert in ${table}:`, error);
-        throw error;
+    const operation = async () => {
+        const { data: inserted, error } = await supabase.from(table).insert([finalData]).select().single();
+        if (error) {
+            console.error(`[Backend Error] Insert in ${table}:`, error);
+            throw error;
+        }
+        return { id: inserted.id, ...inserted };
+    };
+
+    if (!isOnline) {
+        return new Promise((resolve) => {
+            offlineQueue.push(async () => resolve(await operation()));
+        });
     }
-    return { id: inserted.id, ...inserted };
+    return executingWithRetry(operation);
 };
 
-// Standardized Update (with smart array handling)
-export const updateDoc = async (docRef: any, data: any) => {
+// Standardized Update (with smart array handling, retry bounds, & validation)
+export const updateDoc = async (docRef: DocPath, data: Record<string, any>) => {
+    if (!data || Object.keys(data).length === 0) return;
+
     const { table, id } = docRef;
     const finalData = { ...data };
     delete finalData.id;
     delete finalData.uid;
 
-    // Advanced Merge for Arrays (Participants, Likes, etc.)
-    const arrayFields = ['participants', 'readyUsers', 'likes'];
-    for (const key of arrayFields) {
-        if (finalData[key]) {
-            const { data: current } = await supabase.from(table).select(key).eq('id', id).single();
-            const currentArray = (current && Array.isArray(current[key])) ? current[key] : [];
-            const newValue = Array.isArray(finalData[key]) ? finalData[key] : [finalData[key]];
-            const merged = Array.from(new Set([...currentArray, ...newValue]));
-            finalData[key] = merged;
+    const operation = async () => {
+        // Advanced Merge for Arrays with optimistic retries to mitigate race condition
+        const arrayFields = ['participants', 'readyUsers', 'likes'];
+        let attempt = 0;
+        let success = false;
+        
+        while (attempt < 3 && !success) {
+            try {
+                for (const key of arrayFields) {
+                    if (finalData[key]) {
+                        const { data: current, error: fetchErr } = await supabase.from(table).select(key).eq('id', id).single();
+                        if (fetchErr) throw fetchErr;
+                        
+                        const currentArray = (current && Array.isArray(current[key as keyof typeof current])) ? (current[key as keyof typeof current] as unknown as any[]) : [];
+                        const newValue = Array.isArray(finalData[key]) ? (finalData[key] as unknown as any[]) : [finalData[key]];
+                        const merged = Array.from(new Set([...currentArray, ...newValue]));
+                        finalData[key] = merged;
+                    }
+                }
+                const { error } = await supabase.from(table).update(finalData).eq('id', id);
+                if (error) throw error;
+                success = true;
+            } catch (error) {
+                attempt++;
+                if (attempt >= 3) {
+                    console.error(`[Backend Error] Update in ${table} after retries:`, error);
+                    throw error;
+                }
+                await new Promise(res => setTimeout(res, 300 * attempt)); // Short jitter backoff for concurrency
+            }
         }
-    }
+    };
 
-    const { error } = await supabase.from(table).update(finalData).eq('id', id);
-    if (error) {
-        console.error(`[Backend Error] Update in ${table}:`, error);
-        throw error;
+    if (!isOnline) {
+        offlineQueue.push(operation);
+        return;
     }
+    await executingWithRetry(operation);
 };
 
-export const deleteDoc = async (docRef: any) => {
+export const deleteDoc = async (docRef: DocPath) => {
     const { table, id } = docRef;
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) throw error;
+    const operation = async () => {
+        const { error } = await supabase.from(table).delete().eq('id', id);
+        if (error) throw error;
+    };
+    if (!isOnline) {
+        offlineQueue.push(operation);
+        return;
+    }
+    await executingWithRetry(operation);
 };
 
 // Optimized Real-time Subscriptions
 export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void, errorCallback?: (err: any) => void) => {
-    const { table, id } = collOrDocRef;
+    const table = collOrDocRef.table;
+    const id = collOrDocRef.id;
 
     const fetchData = async () => {
         try {
@@ -163,7 +241,7 @@ export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void,
             } else {
                 const { data, error } = await supabase.from(table).select().order('createdAt', { ascending: false });
                 if (error) throw error;
-                const docs = (data || []).map(d => ({ id: d.id, data: () => d }));
+                const docs = (data || []).map((d: any) => ({ id: d.id, data: () => d }));
                 callback({ docs, empty: docs.length === 0 });
             }
         } catch (err) {
@@ -173,23 +251,27 @@ export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void,
     };
 
     fetchData();
-    const sub = supabase.channel(`live-${table}-${id || 'all'}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData()).subscribe();
+    // Use Math.random() in channel string to prevent Realtime channel collisions across remounts
+    const channelName = `live-${table}-${id || 'all'}-${Math.random().toString(36).substr(2, 9)}`;
+    const sub = supabase.channel(channelName).on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData()).subscribe();
     return () => { supabase.removeChannel(sub); };
 };
 
 // Direct Fetch Utils
-export const getDocs = async (collRef: any) => {
+export const getDocs = async (collRef: CollectionPath) => {
     const { table } = collRef;
-    const { data, error } = await supabase.from(table).select().order('createdAt', { ascending: false });
+    const res = await executingWithRetry(async () => await supabase.from(table).select().order('createdAt', { ascending: false }));
+    const { data, error } = res;
     if (error) throw error;
     return { docs: (data || []).map(d => ({ id: d.id, data: () => d })), empty: (data || []).length === 0 };
 };
 
-export const getDoc = async (docRef: any) => {
+export const getDoc = async (docRef: DocPath) => {
     const { table, id } = docRef;
-    const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
+    const res = await executingWithRetry(async () => await supabase.from(table).select().eq('id', id).maybeSingle());
+    const { data, error } = res;
     if (error) throw error;
-    return { exists: () => !!data, data: () => data };
+    return { exists: () => !!data, id: data?.id, data: () => data };
 };
 
 // Misc Helpers
@@ -214,15 +296,21 @@ export const getUserStats = async (uid: string) => {
 };
 
 /**
- * Updates a user's total score in the users table for leaderboard efficiency
+ * Atomically syncs a user's score, rank, and stats via a Postgres RPC function.
+ * This eliminates race conditions that occur with the two-step JS read+write approach.
  */
 export const syncUserScore = async (uid: string) => {
-    const stats = await getUserStats(uid);
-    const { error } = await supabase.from('users').update({
-        totalScore: stats.totalScore,
-        recordingCount: stats.count
-    }).eq('id', uid);
-    if (error) console.error("Error syncing user score:", error);
+    const { error } = await supabase.rpc('sync_user_score', { user_id: uid });
+    if (error) {
+        // Fallback to the JS approach if the RPC function hasn't been deployed yet
+        console.warn('[syncUserScore] RPC not available, using fallback:', error.message);
+        const stats = await getUserStats(uid);
+        await supabase.from('users').update({
+            totalScore: stats.totalScore,
+            recordingCount: stats.count,
+            averageScore: stats.average
+        }).eq('id', uid);
+    }
 };
 
 /**

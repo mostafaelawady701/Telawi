@@ -3,6 +3,7 @@ export interface User {
   displayName?: string;
   photoURL?: string;
   isAnonymous?: boolean;
+  isHost?: boolean;
   createdAt: number;
 }
 
@@ -13,6 +14,7 @@ export interface Room {
   status: 'waiting' | 'playing';
   currentRoundId?: string;
   participants: string[];
+  readyUsers?: string[];
 
   maxParticipants?: number;
   recordingDuration?: number;
@@ -46,5 +48,13 @@ export interface Recording {
   feedback?: string;
   likes?: string[];
   score?: number;
+  rating?: number;
   createdAt: number;
+}
+
+export type ToastType = 'success' | 'error' | 'info';
+export interface ToastMessage {
+  id: string;
+  message: string;
+  type: ToastType;
 }
