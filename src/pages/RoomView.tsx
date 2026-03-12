@@ -296,7 +296,7 @@ export default function RoomView({ user }: { user: any }) {
 
   const isHost = room?.hostId === user.uid;
 
-  const { isLive, startLive, stopLive, joinLive, remoteStreams } = useLiveAudio(roomId, user.uid, isHost);
+  const { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers } = useLiveAudio(roomId, user, isHost);
 
   // Calculate Leaderboard
   const leaderboard = useMemo(() => {
@@ -702,7 +702,7 @@ export default function RoomView({ user }: { user: any }) {
                 <h1 className="text-xl font-bold text-gradient">{room.name}</h1>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <Users className="w-3 h-3" />
-                  <span>{participants.length} مشاركين</span>
+                  <span>متصل {activeUsers.length}</span>
                   {isHost && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">المضيف</span>}
                 </div>
               </div>
@@ -792,7 +792,7 @@ export default function RoomView({ user }: { user: any }) {
                 ))}
               </div>
               <div className="text-sm font-medium text-slate-400 whitespace-nowrap">
-                <span className="text-white font-bold">{participants.length}</span> مشارك في المجلس
+                <span className="text-white font-bold">{activeUsers.length}</span> متصل من أصل {participants.length}
               </div>
             </div>
 
@@ -850,12 +850,12 @@ export default function RoomView({ user }: { user: any }) {
                   <div className="w-full max-w-xs mx-auto space-y-2">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
                       <span>نسبة الاستعداد</span>
-                      <span>{Math.round(((room.readyUsers?.length || 0) / participants.length) * 100)}%</span>
+                      <span>{Math.round(((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100)}%</span>
                     </div>
                     <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: `${((room.readyUsers?.length || 0) / participants.length) * 100}%` }}
+                        animate={{ width: `${((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100}%` }}
                         className={`h-full ${theme.bg} shadow-[0_0_10px_rgba(255,255,255,0.2)]`}
                       />
                     </div>
