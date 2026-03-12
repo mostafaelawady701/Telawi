@@ -45,10 +45,10 @@ export default function RoomView({ user }: { user: any }) {
 
     const syncProfile = async () => {
       try {
-        await updateDoc(doc(db, 'profiles', user.uid), {
-          display_name: user.displayName || 'ضيف',
-          photo_url: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
-          last_seen: new Date().toISOString()
+        await updateDoc(doc(db, 'users', user.uid), {
+          displayName: user.displayName || 'ضيف',
+          photoURL: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
+          lastSeen: new Date().toISOString()
         }).catch(async (err) => {
            // Firestore error codes are different, but generic catch works
         });

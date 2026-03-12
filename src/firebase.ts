@@ -47,17 +47,15 @@ export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void)
     return () => { };
 };
 
-// --- FIRESTORE BRIDGE (Direct, No case transformation for stability) ---
+// --- FIRESTORE BRIDGE ---
 export const db: any = { isSupabase: true };
 
 export const collection = (_db: any, ...path: string[]) => {
-    // Return the last segment as the table name
     const table = path[path.length - 1]; 
     return { table };
 };
 
 export const doc = (_db: any, ...path: string[]) => {
-    // path: ['rooms', roomId] or ['rooms', roomId, 'rounds', roundId]
     const table = path[path.length - 2];
     const id = path[path.length - 1];
     return { table, id };
@@ -65,8 +63,6 @@ export const doc = (_db: any, ...path: string[]) => {
 
 export const addDoc = async (collRef: any, data: any) => {
     const { table } = collRef;
-    
-    // Safety: Remove any client-side generated IDs if they somehow leaked in
     const finalData = { ...data };
     delete finalData.id;
     delete finalData.uid;
@@ -90,16 +86,12 @@ export const updateDoc = async (docRef: any, data: any) => {
     delete finalData.id;
     delete finalData.uid;
 
-    // Handle arrayUnion/arrayRemove simple mock
-    // This looks if the field exists and merges it.
     const arrayFields = ['participants', 'readyUsers', 'likes'];
     for (const key of arrayFields) {
         if (finalData[key]) {
             const { data: current } = await supabase.from(table).select(key).eq('id', id).single();
             const currentArray = (current && Array.isArray(current[key])) ? current[key] : [];
             const newValue = Array.isArray(finalData[key]) ? finalData[key] : [finalData[key]];
-            
-            // Just union them for simplicity in this bridge
             const merged = Array.from(new Set([...currentArray, ...newValue]));
             finalData[key] = merged;
         }
@@ -118,29 +110,36 @@ export const deleteDoc = async (docRef: any) => {
     if (error) throw error;
 };
 
-export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void) => {
+export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void, errorCallback?: (err: any) => void) => {
     const { table, id } = collOrDocRef;
 
     const fetchData = async () => {
-        if (id) {
-            const { data } = await supabase.from(table).select().eq('id', id).maybeSingle();
-            callback({
-                exists: () => !!data,
-                id: id,
-                data: () => data
-            });
-        } else {
-            const { data } = await supabase.from(table).select().order('createdAt', { ascending: false });
-            const docs = (data || []).map(d => ({
-                id: d.id,
-                data: () => d
-            }));
-            callback({ docs, empty: docs.length === 0 });
+        try {
+            if (id) {
+                const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
+                if (error) throw error;
+                callback({
+                    exists: () => !!data,
+                    id: id,
+                    data: () => data
+                });
+            } else {
+                const { data, error } = await supabase.from(table).select().order('createdAt', { ascending: false });
+                if (error) throw error;
+                const docs = (data || []).map(d => ({
+                    id: d.id,
+                    data: () => d
+                }));
+                callback({ docs, empty: docs.length === 0 });
+            }
+        } catch (err) {
+            if (errorCallback) errorCallback(err);
+            else console.error(`[Supabase Error] Realtime on ${table}:`, err);
         }
     };
 
     fetchData();
-    const subscription = supabase.channel(`sync-${table}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData()).subscribe();
+    const subscription = supabase.channel(`sync-${table}-${id || 'all'}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData()).subscribe();
     return () => { supabase.removeChannel(subscription); };
 };
 
@@ -167,9 +166,9 @@ export const getDoc = async (docRef: any) => {
     };
 };
 
-export const query = (c: any) => c;
-export const orderBy = () => ({});
-export const limit = () => ({});
+export const query = (c: any, ..._args: any[]) => c;
+export const orderBy = (..._args: any[]) => ({});
+export const limit = (..._args: any[]) => ({});
 export const arrayUnion = (val: any) => val;
 export const arrayRemove = (val: any) => val;
 export const setDoc = updateDoc;
