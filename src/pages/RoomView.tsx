@@ -296,7 +296,9 @@ export default function RoomView({ user }: { user: any }) {
 
   const isHost = room?.hostId === user.uid;
 
-  const { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers } = useLiveAudio(roomId, user, isHost);
+  const { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence } = useLiveAudio(roomId, user, isHost);
+
+  const [isReadyLocal, setIsReadyLocal] = useState(false);
 
   // Calculate Leaderboard
   const leaderboard = useMemo(() => {
@@ -377,17 +379,12 @@ export default function RoomView({ user }: { user: any }) {
   }, [recordings, sortBy]);
 
   const handleReady = async () => {
-    if (!roomId) return;
     try {
-      const roomRef = doc(db, 'rooms', roomId);
-      const isReady = room?.readyUsers?.includes(user.uid);
-      if (isReady) {
-        await updateDoc(roomRef, { readyUsers: arrayRemove(user.uid) });
-      } else {
-        await updateDoc(roomRef, { readyUsers: arrayUnion(user.uid) });
-      }
+      const newState = !isReadyLocal;
+      setIsReadyLocal(newState);
+      await updatePresence({ isReady: newState });
     } catch (error) {
-      console.error("Error toggling ready state:", error);
+      console.error("Error toggling ready state via Presence:", error);
     }
   };
 
@@ -765,50 +762,57 @@ export default function RoomView({ user }: { user: any }) {
                 المجلس
               </h3>
               <div className="px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs font-bold text-slate-300">
-                {activeUsers.length} من {participants.length} متصل
+                {activeUsers.length} متصل الآن
               </div>
             </div>
 
             <div className="flex flex-col gap-3">
-              {participants.map((p) => (
+              {activeUsers.map((p) => (
                 <motion.div
                   key={p.uid}
                   layout
-                  className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-300 ${
-                    room?.readyUsers?.includes(p.uid)
-                      ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={`group relative flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 border ${
+                    p.isReady
+                      ? 'bg-emerald-500/10 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
                       : 'bg-white/5 border-white/5 hover:bg-white/10'
                   }`}
                 >
                   <div className="relative">
                     <img
-                      src={p.photoURL}
-                      alt={p.displayName}
-                      className={`w-12 h-12 rounded-full border-2 object-cover ${
-                        room?.readyUsers?.includes(p.uid) ? 'border-emerald-400' : 'border-slate-600'
-                      } ${!activeUsers.includes(p.uid) && 'opacity-50 grayscale'}`}
+                      src={p.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.uid}`}
+                      alt={p.name}
+                      className={`w-12 h-12 rounded-xl border-2 object-cover transition-all duration-500 ${
+                        p.isReady ? 'border-emerald-500' : 'border-slate-700'
+                      }`}
                       referrerPolicy="no-referrer"
                     />
-                    <div className="absolute -bottom-1 -right-1">
-                      {room?.readyUsers?.includes(p.uid) ? (
-                        <div className="bg-emerald-500 rounded-full p-1 border-2 border-[#1E293B]">
-                          <Check className="w-3 h-3 text-white" />
-                        </div>
-                      ) : (
-                        <div className="bg-slate-700 rounded-full p-1 border-2 border-[#1E293B]">
-                          <Clock className="w-3 h-3 text-white" />
-                        </div>
-                      )}
-                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 ${
+                      p.isReady ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'
+                    }`} />
                   </div>
+
                   <div className="flex flex-col flex-1">
-                    <span className="font-bold text-white text-sm">{p.displayName}</span>
+                    <span className="font-bold text-white text-sm">{p.name || 'مشارك'}</span>
                     <span className="text-[10px] text-slate-400 font-medium">
-                      {room?.hostId === p.uid ? 'المضيف' : room?.readyUsers?.includes(p.uid) ? 'مستعد للتلاوة' : 'في الانتظار'}
+                      {p.isHost ? 'المضيف' : p.isReady ? 'مستعد للتلاوة' : 'في الانتظار'}
                     </span>
                   </div>
+                  
+                  {p.isReady && (
+                    <div className="bg-emerald-500/20 p-1.5 rounded-full">
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    </div>
+                  )}
                 </motion.div>
               ))}
+              {activeUsers.length === 0 && (
+                <div className="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-white/5 bg-white/[0.02]">
+                  <Users className="w-8 h-8 text-slate-700 mx-auto mb-2 opacity-20" />
+                  <p className="text-slate-500 text-xs font-medium">بانتظار انضمام المشاركين للمجلس...</p>
+                </div>
+              )}
             </div>
 
             {room?.status === 'waiting' && (
@@ -817,19 +821,19 @@ export default function RoomView({ user }: { user: any }) {
                   onClick={handleReady}
                   disabled={!user}
                   className={`group relative w-full overflow-hidden px-6 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
-                    room?.readyUsers?.includes(user.uid)
+                    isReadyLocal
                       ? 'shadow-[0_0_40px_rgba(16,185,129,0.3)] border border-emerald-400/40 bg-emerald-500/10'
                       : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.2)]'
                   }`}
                 >
                   <div className={`absolute inset-0 transition-all duration-700 ${
-                    room?.readyUsers?.includes(user.uid)
+                    isReadyLocal
                       ? 'bg-gradient-to-tr from-emerald-600/20 via-emerald-500/10 to-teal-400/20 opacity-100'
                       : 'bg-white/5 opacity-0 group-hover:opacity-100 group-hover:bg-gradient-to-tr group-hover:from-emerald-600/10 group-hover:to-teal-600/10'
                   }`} />
                   
                   <div className="relative z-10 flex items-center justify-center gap-3 w-full">
-                    {room?.readyUsers?.includes(user.uid) ? (
+                    {isReadyLocal ? (
                       <>
                         <div className="bg-emerald-500 p-1.5 rounded-full shadow-lg flex items-center justify-center animate-pulse">
                           <Check className="w-4 h-4 text-white" />
@@ -1220,9 +1224,9 @@ export default function RoomView({ user }: { user: any }) {
                       )}
                     </div>
                     <div className="w-full pt-4">
-                      {room.readyUsers?.length === 0 && (
+                      {activeUsers.filter(u => u.isReady).length === 0 && (
                         <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-[0.2em] mb-4 text-center animate-pulse">
-                          ⚠️ بانتظار استعداد أحد المشاركين على الأقل
+                          ⚠️ بانتظار استعداد أحد المشاركين على الأقل لفتح المجلس
                         </p>
                       )}
                       <motion.button
@@ -1233,13 +1237,13 @@ export default function RoomView({ user }: { user: any }) {
                         className={`w-full py-6 rounded-[2.5rem] font-black text-2xl shadow-2xl transition-all duration-700 flex items-center justify-center gap-4 group/btn relative overflow-hidden ${
                           isStartingRound
                             ? 'glass-dark/10 text-slate-500 cursor-not-allowed border border-white/5'
-                            : (room.readyUsers?.length || 0) < 1 
+                            : activeUsers.filter(u => u.isReady).length < 1 
                               ? 'bg-slate-800/50 text-slate-400 border border-white/5 hover:border-emerald-500/30'
                               : `bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-emerald-900/40 border border-emerald-400/20`
                         }`}
                       >
                         {/* Shimmer Effect */}
-                        {!isStartingRound && (room.readyUsers?.length || 0) > 0 && (
+                        {!isStartingRound && activeUsers.filter(u => u.isReady).length > 0 && (
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                         )}
                         
@@ -1248,14 +1252,14 @@ export default function RoomView({ user }: { user: any }) {
                         ) : (
                           <>
                             <div className={`p-2 rounded-xl transition-all duration-500 ${
-                              (room.readyUsers?.length || 0) < 1 ? 'bg-white/5' : 'bg-white/20 shadow-lg'
+                              activeUsers.filter(u => u.isReady).length < 1 ? 'bg-white/5' : 'bg-white/20 shadow-lg'
                             }`}>
                               <Play className="w-6 h-6 fill-current" />
                             </div>
                             <span className="tracking-widest font-arabic">إطلاق الجولة الآن</span>
-                            {room.readyUsers && room.readyUsers.length > 0 && (
+                            {activeUsers.filter(u => u.isReady).length > 0 && (
                               <div className="bg-black/20 px-3 py-1 rounded-full text-xs font-bold border border-white/10">
-                                {room.readyUsers.length} جاهز
+                                {activeUsers.filter(u => u.isReady).length} جاهز
                               </div>
                             )}
                           </>

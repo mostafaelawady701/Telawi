@@ -100,6 +100,7 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
           name: user.displayName, 
           photoURL: user.photoURL,
           isHost,
+          isReady: false, // Default state
           joinedAt: new Date().toISOString()
         });
       }
@@ -110,7 +111,19 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
       peersRef.current.forEach(pc => pc.close());
       localStreamRef.current?.getTracks().forEach(track => track.stop());
     };
-  }, [roomId, user]);
+  }, [roomId, user, isHost]); // Added isHost to deps
+
+  const updatePresence = async (metadata: any) => {
+    if (channelRef.current) {
+      await channelRef.current.track({
+        uid: user.uid,
+        name: user.displayName,
+        photoURL: user.photoURL,
+        isHost,
+        ...metadata
+      });
+    }
+  };
 
   const createPeerConnection = (targetUserId: string) => {
     const pc = new RTCPeerConnection({
@@ -219,5 +232,5 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     }
   };
 
-  return { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers };
+  return { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence };
 }

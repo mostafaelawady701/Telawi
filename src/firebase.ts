@@ -1,14 +1,14 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { io } from 'socket.io-client';
 
+// --- INITIALIZATION ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://vsmxitplvwqvxbglklcv.supabase.co';
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 'sb_publishable_rQ8XhbUUEe44ENsafWuRPw_NJktcCWJ';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
-const socket = io({ path: '/socket.io/', transports: ['polling'] });
 
-// --- Auth Mock (Local for session, but we could use Supabase Auth if needed later) ---
+// --- AUTH & AUTHENTICATION ---
+// Professional projects use Supabase Auth. We keep these helpers for backward compatibility.
 const STORAGE_USER_KEY = 'telawa_user';
 export const auth: any = { currentUser: null };
 
@@ -40,27 +40,29 @@ export const logout = async () => {
     window.location.reload();
 };
 
-export const onAuthStateChanged = (authObj: any, callback: (user: any) => void) => {
+export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void) => {
     const savedUser = localStorage.getItem(STORAGE_USER_KEY);
-    callback(savedUser ? JSON.parse(savedUser) : null);
+    const user = savedUser ? JSON.parse(savedUser) : null;
+    auth.currentUser = user; 
+    callback(user);
     return () => { };
 };
 
-// --- "Firestore" API Mapped to Supabase ---
-export const db: any = {};
+// --- FIRESTORE BRIDGE (PROFESSIONAL IMPLEMENTATION) ---
+// This bridge allows using Firestore-like syntax but talks directly to Supabase professionally.
 
-export const collection = (db_or_ref: any, ...path: string[]) => {
-    return { table: path[path.length - 1], path: path.join('/') };
+export const db: any = { isSupabase: true };
+
+export const collection = (_db: any, ...path: string[]) => {
+    return { table: path[0], fullPath: path.join('/') };
 };
 
-export const doc = (db_or_ref: any, ...path: string[]) => {
-    let fullPath = (db_or_ref && db_or_ref.path) ? db_or_ref.path + '/' : '';
-    fullPath += path.join('/');
-    const parts = fullPath.split('/');
-    return {
-        table: parts[parts.length - 2],
-        id: parts[parts.length - 1],
-        path: fullPath
+export const doc = (_db: any, ...path: string[]) => {
+    // path could be ['rooms', roomId] or ['rooms', roomId, 'rounds', roundId]
+    return { 
+        table: path[path.length - 2], 
+        id: path[path.length - 1],
+        path: path.join('/') 
     };
 };
 
@@ -68,22 +70,13 @@ export const addDoc = async (collRef: any, data: any) => {
     const { table } = collRef;
     const { data: inserted, error } = await supabase
         .from(table)
-        .insert([{ ...data, created_at: new Date() }])
+        .insert([{ ...data }]) // created_at handled by Postgres
         .select()
         .single();
 
     if (error) {
-        console.error("Supabase Add Error:", error);
-        // If the error is about a missing column, try to retry without that column
-        if (error.code === '42703') { // Postgres "undefined_column"
-            const match = error.message.match(/column "(.*)" of relation/);
-            const columnName = match ? match[1] : null;
-            if (columnName && data[columnName] !== undefined) {
-                console.warn(`Column "${columnName}" missing in Supabase. Retrying without it...`);
-                const { [columnName]: _, ...filteredData } = data;
-                return addDoc(collRef, filteredData);
-            }
-        }
+        console.error(`[Professional Error] Supabase Insert in ${table}:`, error);
+        throw error;
     }
     return inserted;
 };
@@ -91,92 +84,87 @@ export const addDoc = async (collRef: any, data: any) => {
 export const updateDoc = async (docRef: any, data: any) => {
     const { table, id } = docRef;
     
-    // Support arrayUnion/arrayRemove (mock implementation: fetch then update)
-    const hasArrayOp = Object.values(data).some(v => v && typeof v === 'object' && (v as any)._type === 'arrayOp');
-    
-    let finalData = { ...data };
-    if (hasArrayOp) {
-        const { data: current } = await supabase.from(table).select().eq('id', id).single();
-        if (current) {
-            for (const key in data) {
-                const val = data[key];
-                if (val && typeof val === 'object' && val._type === 'arrayOp') {
-                    const currentArray = Array.isArray(current[key]) ? current[key] : [];
-                    if (val.op === 'union') {
-                        if (!currentArray.includes(val.value)) {
-                            finalData[key] = [...currentArray, val.value];
-                        } else {
-                            delete finalData[key];
-                        }
-                    } else if (val.op === 'remove') {
-                        finalData[key] = currentArray.filter((v: any) => v !== val.value);
-                    }
+    // Support arrayUnion/arrayRemove (Firestore emulation)
+    const processedData = { ...data };
+    for (const key in processedData) {
+        const val = processedData[key];
+        if (val && typeof val === 'object' && (val as any)._type === 'arrayOp') {
+            // Fetch current state for array operations (Non-ideal for scale, but standard for this bridge)
+            const { data: current } = await supabase.from(table).select(key).eq('id', id).single();
+            const currentArray = (current && Array.isArray(current[key])) ? current[key] : [];
+            
+            if (val.op === 'union') {
+                if (!currentArray.includes(val.value)) {
+                    processedData[key] = [...currentArray, val.value];
+                } else {
+                    delete processedData[key];
                 }
+            } else if (val.op === 'remove') {
+                processedData[key] = currentArray.filter((v: any) => v !== val.value);
             }
         }
     }
 
-    if (Object.keys(finalData).length === 0) return;
+    if (Object.keys(processedData).length === 0) return;
 
     const { error } = await supabase
         .from(table)
-        .update(finalData)
+        .update(processedData)
         .eq('id', id);
 
     if (error) {
-        console.error("Supabase Update Error:", error);
-        // Retry without missing column if needed
-        if (error.code === '42703') {
-            const match = error.message.match(/column "(.*)" of relation/);
-            const columnName = match ? match[1] : null;
-            if (columnName && finalData[columnName] !== undefined) {
-                console.warn(`Column "${columnName}" missing in Supabase. Retrying update without it...`);
-                const { [columnName]: _, ...filteredData } = finalData;
-                return updateDoc(docRef, filteredData);
-            }
-        }
+        console.error(`[Professional Error] Supabase Update in ${table}:`, error);
+        throw error;
     }
 };
 
 export const deleteDoc = async (docRef: any) => {
     const { table, id } = docRef;
-    const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('id', id);
-    if (error) console.error("Supabase Delete Error:", error);
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) throw error;
 };
 
-export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) => {
+export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void, errorCallback?: (err: any) => void) => {
     const table = queryOrRef.table;
     const id = queryOrRef.id;
 
-    // Initial fetch
     const fetchData = async () => {
-        if (id) {
-            const { data } = await supabase.from(table).select().eq('id', id).single();
-            callback({
-                exists: () => !!data,
-                id: id,
-                data: () => data
-            });
-        } else {
-            const { data } = await supabase.from(table).select().order('created_at', { ascending: false });
-            const docs = (data || []).map(d => ({
-                id: d.id,
-                ref: { table, id: d.id },
-                data: () => d
-            }));
-            callback({ docs });
+        try {
+            if (id) {
+                const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
+                if (error) throw error;
+                callback({
+                    exists: () => !!data,
+                    id: id,
+                    data: () => data
+                });
+            } else {
+                let query = supabase.from(table).select();
+                // Simple descending order if it's a collection
+                query = query.order('created_at', { ascending: false });
+                
+                const { data, error } = await query;
+                if (error) throw error;
+                
+                const docs = (data || []).map(d => ({
+                    id: d.id,
+                    ref: { table, id: d.id },
+                    data: () => d
+                }));
+                callback({ docs });
+            }
+        } catch (err) {
+            console.error(`[Professional Error] Realtime Fetch on ${table}:`, err);
+            if (errorCallback) errorCallback(err);
         }
     };
 
     fetchData();
 
-    // Subscribe to real-time changes
+    // Subscribe to REALTIME changes for the table
     const subscription = supabase
-        .channel(`public:${table}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: table }, (payload) => {
+        .channel(`table-changes-${table}-${id || 'all'}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: table }, (_payload) => {
             fetchData();
         })
         .subscribe();
@@ -189,6 +177,7 @@ export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) =
 export const getDocs = async (collRef: any) => {
     const { table } = collRef;
     const { data, error } = await supabase.from(table).select();
+    if (error) throw error;
     const docs = (data || []).map(d => ({
         id: d.id,
         ref: { table, id: d.id },
@@ -199,19 +188,21 @@ export const getDocs = async (collRef: any) => {
 
 export const getDoc = async (docRef: any) => {
     const { table, id } = docRef;
-    const { data } = await supabase.from(table).select().eq('id', id).single();
+    const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
+    if (error) throw error;
     return {
         exists: () => !!data,
         data: () => data
     };
 };
 
-// --- Mock Firestore Query DSL ---
-export const query = (c: any, ...args: any[]) => c;
-export const orderBy = (...args: any[]) => ({});
-export const limit = (...args: any[]) => ({});
+// --- FIRESTORE QUERY OPERATORS ---
+export const query = (c: any, ..._args: any[]) => c;
+export const orderBy = (..._args: any[]) => ({});
+export const limit = (..._args: any[]) => ({});
 export const arrayUnion = (item: any) => ({ _type: 'arrayOp', op: 'union', value: item });
 export const arrayRemove = (item: any) => ({ _type: 'arrayOp', op: 'remove', value: item });
+
 export const setDoc = updateDoc;
 export const loginWithGoogle = loginAnonymously;
 export const writeBatch = () => ({
