@@ -2,8 +2,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { io } from 'socket.io-client';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://vsmxitplvwqvxbglklcv.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 'sb_publishable_rQ8XhbUUEe44ENsafWuRPw_NJktcCWJ';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 const socket = io({ path: '/socket.io/', transports: ['polling'] });
