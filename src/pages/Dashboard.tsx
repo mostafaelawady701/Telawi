@@ -151,28 +151,28 @@ export default function Dashboard({ user }: { user: any }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-500/30 overflow-x-hidden">
+    <div className="min-h-screen bg-transparent text-slate-100 selection:bg-emerald-500/30 overflow-x-hidden">
       {/* Background Effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-100 blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-100 blur-[120px] rounded-full" />
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-600/20 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-amber-600/10 blur-[120px] rounded-full" />
       </div>
 
-      <header className="sticky top-0 z-50 glass border-b border-slate-200">
+      <header className="sticky top-0 z-50 glass border-b border-white/10">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_12px_40px_rgba(0,0,0,0.5)] shadow-emerald-500/20">
               <Mic className="text-white w-6 h-6" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-gradient">تلاوة</h1>
           </motion.div>
 
           <div className="flex items-center gap-6">
-            <div className="hidden md:flex items-center gap-4 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+            <div className="hidden md:flex items-center gap-4 px-4 py-2 rounded-full glass-dark/5 border border-white/10">
               <img
                 src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
                 alt="Profile"
@@ -222,12 +222,12 @@ export default function Dashboard({ user }: { user: any }) {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleRandomJoin}
-                className="px-8 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-3 transition-all duration-300 shadow-xl shadow-emerald-900/40"
+                className="px-8 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-3 transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)] shadow-emerald-900/40"
               >
                 <Shuffle className="w-5 h-5" />
                 <span>دخول سريع</span>
               </motion.button>
-              <div className="flex items-center gap-4 px-6 py-4 rounded-2xl bg-white/5 border border-white/10">
+              <div className="flex items-center gap-4 px-6 py-4 rounded-2xl glass-dark/5 border border-white/10">
                 <Users className="text-emerald-400 w-5 h-5" />
                 <span className="text-slate-300 font-medium">+{rooms.reduce((acc, r) => acc + (r.participants?.length || 0), 0)} متواجد الآن</span>
               </div>
@@ -283,7 +283,7 @@ export default function Dashboard({ user }: { user: any }) {
                   </div>
                   <button
                     onClick={() => setIsCreateModalOpen(false)}
-                    className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                    className="p-2 hover:glass-dark/5 rounded-full transition-colors"
                   >
                     <X className="w-6 h-6 text-slate-400" />
                   </button>
@@ -294,20 +294,20 @@ export default function Dashboard({ user }: { user: any }) {
                     {/* Left Column: General Info */}
                     <div className="space-y-6">
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">اسم المجلس</label>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">اسم المجلس</label>
                         <input
                           type="text"
                           placeholder="مثال: تدبر سورة الكهف"
                           value={newRoomName}
                           onChange={(e) => setNewRoomName(e.target.value)}
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
                           required
                         />
                       </div>
 
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">الحد الأقصى للمشاركين</label>
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">الحد الأقصى للمشاركين</label>
                           <span className="text-emerald-400 font-bold">{newMaxParticipants}</span>
                         </div>
                         <input
@@ -320,7 +320,7 @@ export default function Dashboard({ user }: { user: any }) {
 
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">مدة التسجيل (ثانية)</label>
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">مدة التسجيل (ثانية)</label>
                           <span className="text-emerald-400 font-bold">{newRecordingDuration}</span>
                         </div>
                         <input
@@ -335,14 +335,14 @@ export default function Dashboard({ user }: { user: any }) {
                     {/* Right Column: Visuals */}
                     <div className="space-y-6">
                       <div className="space-y-3">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">لون السمة</label>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">لون السمة</label>
                         <div className="flex flex-wrap gap-3">
                           {themePresets.map(preset => (
                             <button
                               key={preset.id}
                               type="button"
                               onClick={() => setNewThemeColor(preset.id)}
-                              className={`w-10 h-10 rounded-xl border-2 transition-all ${newThemeColor === preset.id ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'
+                              className={`w-10 h-10 rounded-xl border-2 transition-all ${newThemeColor === preset.id ? 'border-white scale-110 shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'border-transparent opacity-60 hover:opacity-100'
                                 } ${preset.color}`}
                               title={preset.name}
                             />
@@ -351,7 +351,7 @@ export default function Dashboard({ user }: { user: any }) {
                       </div>
 
                       <div className="space-y-3">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">صورة الخلفية</label>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">صورة الخلفية</label>
                         <div className="grid grid-cols-2 gap-3">
                           {bgPresets.map(bg => (
                             <button
@@ -393,18 +393,18 @@ export default function Dashboard({ user }: { user: any }) {
               </div>
               <div>
                 <h2 className="text-2xl font-bold">المجالس النشطة</h2>
-                <p className="text-slate-500 text-sm">استمع وشارك في التلاوات الجارية</p>
+                <p className="text-slate-400 text-sm">استمع وشارك في التلاوات الجارية</p>
               </div>
             </div>
 
             <div className="relative w-full md:w-80">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               <input
                 type="text"
                 placeholder="ابحث عن مجلس..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                className="w-full glass-dark/5 border border-white/10 rounded-xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
               />
             </div>
           </div>
@@ -417,7 +417,7 @@ export default function Dashboard({ user }: { user: any }) {
                 className="text-center py-20 glass rounded-3xl border-dashed border-white/10"
               >
                 <div className="w-20 h-20 rounded-full bg-slate-900 flex items-center justify-center mx-auto mb-6">
-                  <Search className="text-slate-600 w-10 h-10" />
+                  <Search className="text-slate-400 w-10 h-10" />
                 </div>
                 <p className="text-slate-400 text-lg">لا توجد مجالس تطابق بحثك حالياً.</p>
                 <button
@@ -436,7 +436,7 @@ export default function Dashboard({ user }: { user: any }) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => handleJoinRoom(room.id)}
-                    className="group relative glass rounded-3xl p-6 hover:bg-white/10 transition-all duration-500 cursor-pointer border border-white/5 hover:border-emerald-500/30 overflow-hidden"
+                    className="group relative glass rounded-3xl p-6 hover:glass-dark/10 transition-all duration-500 cursor-pointer border border-white/5 hover:border-emerald-500/30 overflow-hidden"
                   >
                     {/* Card Background Glow */}
                     <div className="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/10 blur-[50px] group-hover:bg-emerald-500/20 transition-all duration-500" />
@@ -455,7 +455,7 @@ export default function Dashboard({ user }: { user: any }) {
                           <h3 className="font-bold text-lg truncate max-w-[150px] group-hover:text-emerald-400 transition-colors">
                             {room.name}
                           </h3>
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
                             <Trophy className="w-3 h-3 text-amber-500" />
                             <span>مسابقة نشطة</span>
                           </div>
@@ -472,7 +472,7 @@ export default function Dashboard({ user }: { user: any }) {
                           onClick={(e) => handleCopyLink(e, room.id)}
                           className={`p-2 rounded-lg transition-all duration-300 flex items-center gap-2 ${copiedId === room.id
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-white/5 text-slate-500 hover:text-white border border-white/5 hover:bg-white/10'
+                            : 'glass-dark/5 text-slate-400 hover:text-white border border-white/5 hover:glass-dark/10'
                             }`}
                           title="نسخ رابط الغرفة"
                         >
@@ -501,7 +501,7 @@ export default function Dashboard({ user }: { user: any }) {
                       <div className="flex -space-x-2">
                         {[1, 2, 3].map((i) => (
                           <div key={i} className="w-8 h-8 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center text-[10px] font-bold">
-                            {i === 3 ? `+${(room.participants?.length || 0)}` : <Users className="w-3 h-3 text-slate-500" />}
+                            {i === 3 ? `+${(room.participants?.length || 0)}` : <Users className="w-3 h-3 text-slate-400" />}
                           </div>
                         ))}
                       </div>
@@ -524,12 +524,12 @@ export default function Dashboard({ user }: { user: any }) {
             <Mic className="w-5 h-5" />
             <span className="font-bold tracking-tight">تلاوة</span>
           </div>
-          <div className="flex gap-8 text-sm text-slate-500">
+          <div className="flex gap-8 text-sm text-slate-400">
             <a href="#" className="hover:text-white transition-colors">عن المنصة</a>
             <a href="#" className="hover:text-white transition-colors">الشروط والأحكام</a>
             <a href="#" className="hover:text-white transition-colors">تواصل معنا</a>
           </div>
-          <p className="text-xs text-slate-600">© 2026 منصة تلاوة. جميع الحقوق محفوظة.</p>
+          <p className="text-xs text-slate-400">© 2026 منصة تلاوة. جميع الحقوق محفوظة.</p>
         </div>
       </footer>
     </div>

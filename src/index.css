@@ -1,41 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Tajawal:wght@200;300;400;500;700;800&family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Tajawal", ui-sans-serif, system-ui, sans-serif;
-  --font-arabic: "Amiri", "Scheherazade New", serif;
+  --font-sans: "Cairo", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Aref Ruqaa", "Amiri", serif;
   
-  --color-gold: #C5A059;
-  --color-deep-indigo: #1E293B;
-  --color-spiritual-green: #065F46;
+  --color-gold-400: #FBBF24;
+  --color-gold-500: #D97706;
+  --color-onyx: #0F172A;
+  --color-onyx-deep: #020617;
+  --color-emerald-glow: #10b981;
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-[#020617] text-slate-200 antialiased font-sans;
+    background-image: radial-gradient(circle at 50% 0%, #064e3b15 0%, transparent 50%),
+                      radial-gradient(circle at 100% 100%, #854d0e15 0%, transparent 50%);
+    background-attachment: fixed;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold;
   }
 }
 
+/* Premium Glass & Onyx effects */
 .glass {
-  @apply bg-white/80 backdrop-blur-md border border-slate-200 shadow-sm;
+  @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.3)];
 }
 
 .glass-dark {
-  @apply bg-slate-900/90 backdrop-blur-md border border-slate-800 shadow-lg;
+  @apply bg-[#0f172a]/80 backdrop-blur-2xl border border-white/5 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)];
 }
 
+.glass-emerald {
+  @apply bg-emerald-950/40 backdrop-blur-lg border border-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.1)];
+}
+
+.glass-gold {
+  @apply bg-amber-950/40 backdrop-blur-lg border border-amber-500/20 shadow-[0_0_30px_rgba(245,158,11,0.1)];
+}
+
+/* Typography Enhancements */
 .text-gradient {
-  @apply bg-clip-text text-transparent bg-gradient-to-br from-slate-900 to-slate-600;
+  @apply bg-clip-text text-transparent bg-gradient-to-l from-white to-slate-400;
 }
 
-.gold-gradient {
-  @apply bg-clip-text text-transparent bg-gradient-to-br from-amber-600 to-amber-800;
+.text-gradient-emerald {
+  @apply bg-clip-text text-transparent bg-gradient-to-l from-emerald-300 to-teal-500;
+}
+
+.text-gradient-gold {
+  @apply bg-clip-text text-transparent bg-gradient-to-l from-amber-200 via-yellow-400 to-amber-600;
+}
+
+.font-ruqaa {
+  font-family: 'Aref Ruqaa', serif;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -43,14 +70,37 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full hover:bg-slate-400 transition-colors;
+  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors border border-transparent bg-clip-padding;
 }
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
-
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Animations that scream premium */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 15px rgba(16, 212, 102, 0.4)); }
+  50% { opacity: .8; filter: drop-shadow(0 0 25px rgba(16, 185, 129, 0.8)); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 25px -5px var(--color-emerald-glow);
 }

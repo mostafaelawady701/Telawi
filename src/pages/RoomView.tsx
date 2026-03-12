@@ -682,20 +682,20 @@ export default function RoomView({ user }: { user: any }) {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 text-slate-900 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden"
+      className="min-h-screen bg-transparent text-slate-100 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden"
     >
       {/* Background Effects */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-100 blur-[150px] rounded-full opacity-20`} />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-100 blur-[150px] rounded-full opacity-20" />
+        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/20 blur-[150px] rounded-full opacity-30`} />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-amber-600/10 blur-[150px] rounded-full opacity-30" />
       </div>
 
       <div className="relative z-10 flex flex-col flex-1">
         {/* Header */}
-        <header className="sticky top-0 z-50 glass border-b border-slate-200 h-20">
+        <header className="sticky top-0 z-50 glass border-b border-white/10 h-20">
           <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl ${theme.bg} flex items-center justify-center shadow-lg ${theme.glow}`}>
+              <div className={`w-10 h-10 rounded-xl ${theme.bg} flex items-center justify-center shadow-[0_12px_40px_rgba(0,0,0,0.5)] ${theme.glow}`}>
                 <Radio className="text-white w-6 h-6 animate-pulse" />
               </div>
               <div>
@@ -713,7 +713,7 @@ export default function RoomView({ user }: { user: any }) {
                 onClick={isHost ? (isLive ? stopLive : startLive) : joinLive}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all duration-300 ${isLive
                   ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse'
-                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                  : 'glass-dark/5 text-slate-400 border-white/10 hover:glass-dark/10'
                   }`}
                 title={isHost ? (isLive ? "إيقاف البث المباشر" : "بدء بث مباشر") : "انضمام للبث المباشر"}
               >
@@ -722,7 +722,7 @@ export default function RoomView({ user }: { user: any }) {
               </button>
               <button
                 onClick={handleShare}
-                className="p-2.5 rounded-xl glass hover:bg-white/10 text-slate-300 transition-all duration-300"
+                className="p-2.5 rounded-xl glass hover:glass-dark/10 text-slate-300 transition-all duration-300"
                 title="مشاركة المجلس"
               >
                 {copied ? <Check className="w-5 h-5 text-emerald-400" /> : <Share2 className="w-5 h-5" />}
@@ -730,14 +730,14 @@ export default function RoomView({ user }: { user: any }) {
               {isHost && (
                 <button
                   onClick={() => setIsSettingsOpen(true)}
-                  className="p-2.5 rounded-xl glass hover:bg-white/10 text-slate-300 transition-all duration-300"
+                  className="p-2.5 rounded-xl glass hover:glass-dark/10 text-slate-300 transition-all duration-300"
                 >
                   <Settings className="w-5 h-5" />
                 </button>
               )}
               <button
                 onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-white/10 transition-all duration-300 text-sm font-medium"
+                className="px-4 py-2 rounded-xl glass-dark/5 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-white/10 transition-all duration-300 text-sm font-medium"
               >
                 مغادرة
               </button>
@@ -764,7 +764,7 @@ export default function RoomView({ user }: { user: any }) {
                     layout
                     className="relative group"
                   >
-                    <div className={`relative p-0.5 rounded-full transition-all duration-500 ${room?.readyUsers?.includes(p.uid) ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 scale-110 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-white/10'}`}>
+                    <div className={`relative p-0.5 rounded-full transition-all duration-500 ${room?.readyUsers?.includes(p.uid) ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 scale-110 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'glass-dark/10'}`}>
                       <img
                         src={p.photoURL}
                         alt={p.displayName}
@@ -774,7 +774,7 @@ export default function RoomView({ user }: { user: any }) {
                     </div>
                     <div className="absolute -bottom-1 -right-1">
                       {room?.readyUsers?.includes(p.uid) ? (
-                        <div className="bg-emerald-500 rounded-full p-1 border-2 border-slate-900 shadow-lg">
+                        <div className="bg-emerald-500 rounded-full p-1 border-2 border-slate-900 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
                           <Check className="w-2 h-2 text-white" />
                         </div>
                       ) : (
@@ -801,7 +801,7 @@ export default function RoomView({ user }: { user: any }) {
                 onClick={handleReady}
                 className={`relative z-10 px-8 py-3 rounded-2xl font-bold transition-all duration-500 transform hover:scale-105 active:scale-95 flex items-center gap-3 ${room?.readyUsers?.includes(user.uid)
                   ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)]'
-                  : 'bg-white/10 text-white border border-white/10 hover:bg-white/20'
+                  : 'glass-dark/10 text-white border border-white/10 hover:glass-dark/10'
                   }`}
               >
                 {room?.readyUsers?.includes(user.uid) ? (
@@ -826,8 +826,8 @@ export default function RoomView({ user }: { user: any }) {
           >
             {/* Background Decoration */}
             <div className={`absolute top-0 left-0 w-full h-1.5 ${theme.bg} opacity-30 group-hover:opacity-60 transition-opacity duration-500`}></div>
-            <div className="absolute -right-20 -top-20 w-64 h-64 bg-white/5 blur-[100px] rounded-full" />
-            <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-white/5 blur-[100px] rounded-full" />
+            <div className="absolute -right-20 -top-20 w-64 h-64 glass-dark/5 blur-[100px] rounded-full" />
+            <div className="absolute -left-20 -bottom-20 w-64 h-64 glass-dark/5 blur-[100px] rounded-full" />
 
             {room?.status === 'waiting' ? (
               <div className="text-center space-y-8 max-w-md relative z-10 w-full">
@@ -838,7 +838,7 @@ export default function RoomView({ user }: { user: any }) {
                 >
                   <Users className={`w-12 h-12 ${theme.text}`} />
                   {room.readyUsers && room.readyUsers.length > 0 && (
-                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-black w-8 h-8 rounded-full flex items-center justify-center border-4 border-slate-900 shadow-xl">
+                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-black w-8 h-8 rounded-full flex items-center justify-center border-4 border-slate-900 shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
                       {room.readyUsers.length}
                     </div>
                   )}
@@ -848,11 +848,11 @@ export default function RoomView({ user }: { user: any }) {
 
                   {/* Readiness Progress Bar */}
                   <div className="w-full max-w-xs mx-auto space-y-2">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
                       <span>نسبة الاستعداد</span>
                       <span>{Math.round(((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100)}%</span>
                     </div>
-                    <div className="h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                    <div className="h-2 glass-dark/5 rounded-full overflow-hidden border border-white/5">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100}%` }}
@@ -875,19 +875,19 @@ export default function RoomView({ user }: { user: any }) {
                   <div className="space-y-6 w-full pt-4">
                     <div className="glass-dark p-6 rounded-[2rem] border border-white/5 text-right space-y-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-widest text-slate-500">إعدادات الجولة</span>
+                        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">إعدادات الجولة</span>
                         <Sparkles className="w-4 h-4 text-amber-400" />
                       </div>
                       <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-white/5">
                         <button
                           onClick={() => setVerseSelectionMode('random')}
-                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'random' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'random' ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
                         >
                           عشوائي
                         </button>
                         <button
                           onClick={() => setVerseSelectionMode('manual')}
-                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'manual' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'manual' ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
                         >
                           يدوي
                         </button>
@@ -899,7 +899,7 @@ export default function RoomView({ user }: { user: any }) {
                           className="flex gap-4 pt-2"
                         >
                           <div className="flex-1 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">رقم السورة</label>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">رقم السورة</label>
                             <input
                               type="number"
                               min="1" max="114"
@@ -909,7 +909,7 @@ export default function RoomView({ user }: { user: any }) {
                             />
                           </div>
                           <div className="flex-1 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">رقم الآية</label>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">رقم الآية</label>
                             <input
                               type="number"
                               min="1"
@@ -927,7 +927,7 @@ export default function RoomView({ user }: { user: any }) {
                       onClick={startNewRound}
                       disabled={isStartingRound || (room.readyUsers?.length || 0) < 1}
                       className={`w-full py-5 rounded-[2rem] font-black text-xl shadow-2xl transition-all duration-500 flex items-center justify-center gap-3 group/btn ${isStartingRound || (room.readyUsers?.length || 0) < 1
-                        ? 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/5'
+                        ? 'glass-dark/5 text-slate-400 cursor-not-allowed border border-white/5'
                         : `bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-900/40`
                         }`}
                     >
@@ -998,7 +998,7 @@ export default function RoomView({ user }: { user: any }) {
                                 className="w-24 h-24 rounded-[2rem] border-4 border-emerald-500/50 object-cover relative z-10"
                                 referrerPolicy="no-referrer"
                               />
-                              <div className="absolute -bottom-2 -right-2 bg-emerald-500 p-2.5 rounded-xl shadow-xl z-20 animate-bounce">
+                              <div className="absolute -bottom-2 -right-2 bg-emerald-500 p-2.5 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] z-20 animate-bounce">
                                 <Mic className="w-5 h-5 text-white" />
                               </div>
                             </div>
@@ -1026,7 +1026,7 @@ export default function RoomView({ user }: { user: any }) {
                               </div>
                               <button
                                 onClick={stopRecording}
-                                className="w-full py-5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-[2rem] font-black text-xl hover:from-red-500 hover:to-rose-500 transition-all duration-300 shadow-xl shadow-red-900/20 flex items-center justify-center gap-3 group/stop"
+                                className="w-full py-5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-[2rem] font-black text-xl hover:from-red-500 hover:to-rose-500 transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)] shadow-red-900/20 flex items-center justify-center gap-3 group/stop"
                               >
                                 <Square className="w-6 h-6 group-hover/stop:scale-110 transition-transform" />
                                 إنهاء التلاوة
@@ -1117,11 +1117,11 @@ export default function RoomView({ user }: { user: any }) {
                       <div className="flex flex-col items-center gap-8 pt-10">
                         <div className="flex items-center gap-6 px-8 py-4 glass-dark rounded-3xl border border-white/5">
                           <div className="text-center px-6 border-r border-white/10">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">إجمالي المشاركين</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">إجمالي المشاركين</p>
                             <p className="text-2xl font-black text-white">{recordings.filter(r => r.roundId === round.id).length}</p>
                           </div>
                           <div className="text-center px-6">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">متوسط الدرجات</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">متوسط الدرجات</p>
                             <p className="text-2xl font-black text-emerald-400">
                               {Math.round(recordings.filter(r => r.roundId === round.id && r.score !== undefined).reduce((acc, curr) => acc + (curr.score || 0), 0) / (recordings.filter(r => r.roundId === round.id && r.score !== undefined).length || 1))}
                             </p>
@@ -1157,7 +1157,7 @@ export default function RoomView({ user }: { user: any }) {
                   <Trophy className="w-8 h-8" />
                   لوحة الشرف
                 </h3>
-                <div className="px-4 py-1.5 glass-dark rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                <div className="px-4 py-1.5 glass-dark rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                   أفضل القراء
                 </div>
               </div>
@@ -1175,15 +1175,15 @@ export default function RoomView({ user }: { user: any }) {
                       } opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
 
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-2xl relative z-10 ${idx === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-amber-900/40' :
-                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-900' :
+                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-100' :
                         idx === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900 text-white' :
-                          'bg-white/10 text-slate-400'
+                          'glass-dark/10 text-slate-400'
                       }`}>
                       {idx + 1}
                     </div>
                     <div className="flex-1 relative z-10">
                       <p className="font-black text-white text-lg leading-tight">{user.name}</p>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mt-1">{user.recCount} تلاوة</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{user.recCount} تلاوة</p>
                     </div>
                     <div className="text-3xl font-black text-amber-400 relative z-10">
                       {user.totalScore}
@@ -1215,7 +1215,7 @@ export default function RoomView({ user }: { user: any }) {
                     <button
                       key={tab.id}
                       onClick={() => setSortBy(tab.id as any)}
-                      className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${sortBy === tab.id ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                      className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${sortBy === tab.id ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
                     >
                       {tab.label}
                     </button>
@@ -1236,7 +1236,7 @@ export default function RoomView({ user }: { user: any }) {
                         exit={{ opacity: 0, scale: 0.95 }}
                         className={`flex flex-col p-6 rounded-[2rem] transition-all duration-500 relative overflow-hidden group ${isTopRated
                           ? 'bg-amber-500/5 border border-amber-500/20 shadow-2xl shadow-amber-900/10'
-                          : 'glass-dark border border-white/5 hover:bg-white/[0.04]'
+                          : 'glass-dark border border-white/5 hover:glass-dark/[0.04]'
                           }`}
                       >
                         {isTopRated && (
@@ -1253,7 +1253,7 @@ export default function RoomView({ user }: { user: any }) {
                                 referrerPolicy="no-referrer"
                               />
                               {isTopRated && (
-                                <div className="absolute -top-2 -right-2 bg-amber-500 p-1.5 rounded-lg shadow-lg">
+                                <div className="absolute -top-2 -right-2 bg-amber-500 p-1.5 rounded-lg shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
                                   <Trophy className="w-3 h-3 text-white" />
                                 </div>
                               )}
@@ -1261,10 +1261,10 @@ export default function RoomView({ user }: { user: any }) {
                             <div>
                               <p className="font-black text-white text-lg">{rec.userName}</p>
                               <div className="flex items-center gap-3 mt-1">
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                   {new Date(rec.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                                 </p>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                   <Clock className="w-3 h-3" />
                                   {rec.duration}s
                                 </div>
@@ -1288,7 +1288,7 @@ export default function RoomView({ user }: { user: any }) {
                               onClick={() => handleLike(rec)}
                               className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${rec.likes?.includes(user.uid)
                                 ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                : 'bg-white/5 text-slate-400 border border-white/5 hover:bg-white/10'
+                                : 'glass-dark/5 text-slate-400 border border-white/5 hover:glass-dark/10'
                                 }`}
                             >
                               <Heart className={`w-4 h-4 ${rec.likes?.includes(user.uid) ? 'fill-current' : ''}`} />
@@ -1326,7 +1326,7 @@ export default function RoomView({ user }: { user: any }) {
                                       <button
                                         key={i}
                                         onClick={() => handleScore(rec, scoreValue)}
-                                        className={`p-1 transition-all duration-300 hover:scale-110 ${isActive ? 'text-amber-400' : 'text-slate-700 hover:text-amber-400/50'}`}
+                                        className={`p-1 transition-all duration-300 hover:scale-110 ${isActive ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400/50'}`}
                                         title={`${scoreValue} نقطة`}
                                       >
                                         <Star className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`} />
@@ -1346,7 +1346,7 @@ export default function RoomView({ user }: { user: any }) {
                                     placeholder="درجة من 100"
                                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
                                   />
-                                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-600 uppercase">درجة</div>
+                                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase">درجة</div>
                                 </div>
                                 <div className="px-3 py-2 glass-dark rounded-xl border border-white/5 text-amber-400 font-black text-lg min-w-[3rem] text-center">
                                   {rec.score || 0}
@@ -1358,7 +1358,7 @@ export default function RoomView({ user }: { user: any }) {
 
                         {isHost && round?.status === 'reviewing' && (
                           <div className="mt-6 pt-6 border-t border-white/5">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">الموجة الصوتية للتسجيل</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">الموجة الصوتية للتسجيل</p>
                             <div className="glass-dark p-4 rounded-2xl border border-white/5">
                               <Waveform audioUrl={rec.audioData} />
                             </div>
@@ -1381,7 +1381,7 @@ export default function RoomView({ user }: { user: any }) {
                               onClick={() => handleGetFeedback(rec)}
                               disabled={analyzingId === rec.id}
                               className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${analyzingId === rec.id
-                                ? 'bg-white/5 text-slate-500 cursor-not-allowed'
+                                ? 'glass-dark/5 text-slate-400 cursor-not-allowed'
                                 : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
                                 }`}
                             >
@@ -1432,7 +1432,7 @@ export default function RoomView({ user }: { user: any }) {
                 </div>
                 <button
                   onClick={() => setIsSettingsOpen(false)}
-                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                  className="p-2 hover:glass-dark/5 rounded-full transition-colors"
                 >
                   <X className="w-6 h-6 text-slate-400" />
                 </button>
@@ -1442,7 +1442,7 @@ export default function RoomView({ user }: { user: any }) {
                 {/* General Settings */}
                 <div className="space-y-8">
                   <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <Users className="w-3 h-3" />
                       إعدادات عامة
                     </h3>
@@ -1477,20 +1477,20 @@ export default function RoomView({ user }: { user: any }) {
                   </div>
 
                   <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <Volume2 className="w-3 h-3" />
                       إعدادات الصوت
                     </h3>
                     <div className="flex items-center justify-between p-4 glass-dark rounded-2xl border border-white/5">
                       <div>
                         <p className="text-sm font-bold text-white">تأثير الصدى (Reverb)</p>
-                        <p className="text-[10px] text-slate-500">محاكاة صوت المسجد الكبير</p>
+                        <p className="text-[10px] text-slate-400">محاكاة صوت المسجد الكبير</p>
                       </div>
                       <button
                         onClick={() => setEchoEnabled(!echoEnabled)}
                         className={`w-12 h-6 rounded-full transition-all relative ${echoEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
                       >
-                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${echoEnabled ? 'right-7' : 'right-1'}`} />
+                        <div className={`absolute top-1 w-4 h-4 rounded-full glass-dark transition-all ${echoEnabled ? 'right-7' : 'right-1'}`} />
                       </button>
                     </div>
                   </div>
@@ -1499,7 +1499,7 @@ export default function RoomView({ user }: { user: any }) {
                 {/* Visual Settings */}
                 <div className="space-y-8">
                   <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <Sparkles className="w-3 h-3" />
                       المظهر والسمات
                     </h3>
@@ -1512,7 +1512,7 @@ export default function RoomView({ user }: { user: any }) {
                             <button
                               key={color}
                               onClick={() => setEditThemeColor(color)}
-                              className={`w-10 h-10 rounded-xl border-2 transition-all ${editThemeColor === color ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'
+                              className={`w-10 h-10 rounded-xl border-2 transition-all ${editThemeColor === color ? 'border-white scale-110 shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'border-transparent opacity-60 hover:opacity-100'
                                 } ${color === 'emerald' ? 'bg-emerald-500' :
                                   color === 'blue' ? 'bg-blue-500' :
                                     color === 'purple' ? 'bg-purple-500' :
@@ -1531,7 +1531,7 @@ export default function RoomView({ user }: { user: any }) {
               <div className="mt-10 pt-8 border-t border-white/5 flex gap-4">
                 <button
                   onClick={() => setIsSettingsOpen(false)}
-                  className="flex-1 py-4 rounded-2xl bg-white/5 text-slate-400 font-bold hover:bg-white/10 transition-all"
+                  className="flex-1 py-4 rounded-2xl glass-dark/5 text-slate-400 font-bold hover:glass-dark/10 transition-all"
                 >
                   إلغاء
                 </button>

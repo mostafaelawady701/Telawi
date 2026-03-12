@@ -18,7 +18,11 @@ export default function App() {
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-emerald-600">جاري التحميل...</div>;
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin shadow-[0_0_30px_rgba(16,185,129,0.3)]"></div>
+      </div>
+    );
   }
 
   return (
