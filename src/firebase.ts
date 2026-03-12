@@ -41,15 +41,19 @@ export const syncUserScore = async (userId: string) => {
 };
 
 const syncUserProfile = async (uid: string, name: string, isAnon: boolean) => {
-    const { error } = await supabase.from('users').upsert({
-        id: uid,
-        display_name: name,
-        is_anonymous: isAnon,
-        photo_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
-        last_seen: new Date().toISOString(),
-        created_at: Date.now()
-    });
-    if (error) console.error("Error syncing profile to DB:", error);
+    try {
+        const { error } = await supabase.from('users').upsert({
+            id: uid,
+            display_name: name,
+            is_anonymous: isAnon,
+            photo_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || uid)}`,
+            last_seen: new Date().toISOString(),
+            created_at: Date.now()
+        }, { onConflict: 'id' });
+        if (error) throw error;
+    } catch (error) {
+        console.error("Critical Profile Sync Error:", error);
+    }
 };
 
 export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void) => {
@@ -105,10 +109,15 @@ const fromSnake = (obj: any) => {
 
 export const addDoc = async (collRef: any, data: any) => {
     const snakeData = toSnake(data);
-    const { data: inserted, error } = await supabase.from(collRef.table).insert([snakeData]).select().single();
+    // Use upsert to prevent 409 Conflicts if an ID is already present
+    const { data: inserted, error } = await supabase
+        .from(collRef.table)
+        .upsert([snakeData], { onConflict: 'id' })
+        .select()
+        .single();
+
     if (error) {
-        console.error(`[Supabase Error] Insert in ${collRef.table}:`, error);
-        console.dir(snakeData);
+        console.error(`[Supabase Error] ${collRef.table} operation failed:`, error);
         throw error;
     }
     return fromSnake(inserted);
