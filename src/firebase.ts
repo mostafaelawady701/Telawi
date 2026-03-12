@@ -1,9 +1,13 @@
 
 import { io } from 'socket.io-client';
 
-const socket = io(); // Use the existing shared server context
+// On Vercel, relative path for socket.io might fail, we try to use relative but fallback
+const socket = io({
+    path: '/socket.io/',
+    transports: ['polling'] // Polling is more stable on Serverless
+});
 
-// --- Auth Mock (Still purely local) ---
+// --- Auth Mock ---
 const STORAGE_USER_KEY = 'telawa_user';
 export const auth: any = { currentUser: null };
 
@@ -60,16 +64,24 @@ export const doc = (db_or_ref: any, ...path: string[]) => {
 
 export const addDoc = async (collName_or_ref: any, data: any) => {
     const collName = collName_or_ref.collName || collName_or_ref;
-    const res = await fetch(`/api/data/${collName}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    });
-    return res.json();
+    try {
+        const res = await fetch(`/api/data/${collName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error("Server error");
+        return res.json();
+    } catch (e) {
+        console.error("API Error:", e);
+        // Local fallback if API fails
+        return { id: Math.random().toString(36).substr(2, 9), ...data };
+    }
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-    await fetch(`/api/data/${docRef.collName}/${docRef.id}`, {
+    const { collName, id } = docRef;
+    await fetch(`/api/data/${collName}/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -86,33 +98,42 @@ export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) =
     const collName = queryOrRef.collName || queryOrRef;
 
     const refresh = async () => {
-        if (queryOrRef.id) {
-            const res = await fetch(`/api/data/${collName}/${queryOrRef.id}`);
-            const data = await res.json();
-            callback({
-                exists: () => !!data,
-                id: queryOrRef.id,
-                data: () => data
-            });
-        } else {
-            const res = await fetch(`/api/data/${collName}`);
-            const dataObj = await res.json();
-            const docs = Object.values(dataObj).map((d: any) => ({
-                id: d.id,
-                ref: { collName, id: d.id },
-                data: () => d
-            }));
-            callback({ docs });
+        try {
+            if (queryOrRef.id) {
+                const res = await fetch(`/api/data/${collName}/${queryOrRef.id}`);
+                const data = await res.json();
+                callback({
+                    exists: () => !!data,
+                    id: queryOrRef.id,
+                    data: () => data
+                });
+            } else {
+                const res = await fetch(`/api/data/${collName}`);
+                if (!res.ok) return;
+                const dataObj = await res.json();
+                const docs = Object.values(dataObj).map((d: any) => ({
+                    id: d.id,
+                    ref: { collName, id: d.id },
+                    data: () => d
+                }));
+                callback({ docs });
+            }
+        } catch (e) {
+            console.error("Polling error:", e);
         }
     };
 
     refresh();
 
-    // Listen for changes from server
+    // Polling fallback (every 5 seconds) as backup for Vercel
+    const pollingInterval = setInterval(refresh, 5000);
+
+    // Try socket sync if available
     const eventName = `data-changed:${collName}`;
     socket.on(eventName, refresh);
 
     return () => {
+        clearInterval(pollingInterval);
         socket.off(eventName, refresh);
     };
 };
@@ -120,6 +141,7 @@ export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) =
 export const getDocs = async (collNameOrQuery: any) => {
     const collName = collNameOrQuery.collName || collNameOrQuery;
     const res = await fetch(`/api/data/${collName}`);
+    if (!res.ok) return { docs: [], empty: true };
     const dataObj = await res.json();
     const docs = Object.values(dataObj).map((d: any) => ({
         id: d.id,
