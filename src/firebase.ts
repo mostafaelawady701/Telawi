@@ -104,19 +104,32 @@ const fromSnake = (obj: any) => {
 };
 
 export const addDoc = async (collRef: any, data: any) => {
-    const { data: inserted, error } = await supabase.from(collRef.table).insert([toSnake(data)]).select().single();
-    if (error) throw error;
+    const snakeData = toSnake(data);
+    const { data: inserted, error } = await supabase.from(collRef.table).insert([snakeData]).select().single();
+    if (error) {
+        console.error(`[Supabase Error] Insert in ${collRef.table}:`, error);
+        console.dir(snakeData);
+        throw error;
+    }
     return fromSnake(inserted);
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-    const { error } = await supabase.from(docRef.table).update(toSnake(data)).eq('id', docRef.id);
-    if (error) throw error;
+    const snakeData = toSnake(data);
+    const { error } = await supabase.from(docRef.table).update(snakeData).eq('id', docRef.id);
+    if (error) {
+        console.error(`[Supabase Error] Update in ${docRef.table} (${docRef.id}):`, error);
+        console.dir(snakeData);
+        throw error;
+    }
 };
 
 export const deleteDoc = async (docRef: any) => {
     const { error } = await supabase.from(docRef.table).delete().eq('id', docRef.id);
-    if (error) throw error;
+    if (error) {
+        console.error(`[Supabase Error] Delete in ${docRef.table}:`, error);
+        throw error;
+    }
 };
 
 export const onSnapshot = (collOrDocRef: any, callback: (snap: any) => void, errorCallback?: (err: any) => void) => {
@@ -125,24 +138,35 @@ export const onSnapshot = (collOrDocRef: any, callback: (snap: any) => void, err
 
     const stream = async () => {
         try {
+            let result;
             if (id) {
-                const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
-                if (error) throw error;
-                callback({ exists: () => !!data, id, data: () => fromSnake(data) });
+                result = await supabase.from(table).select('*').eq('id', id).maybeSingle();
             } else {
-                const { data, error } = await supabase.from(table).select().order('created_at', { ascending: false });
-                if (error) throw error;
-                const docs = (data || []).map(d => ({ id: d.id, data: () => fromSnake(d) }));
+                result = await supabase.from(table).select('*').order('created_at', { ascending: false });
+            }
+
+            if (result.error) throw result.error;
+
+            if (id) {
+                callback({ exists: () => !!result.data, id, data: () => fromSnake(result.data) });
+            } else {
+                const docs = (result.data || []).map(d => ({ id: d.id, data: () => fromSnake(d) }));
                 callback({ docs, empty: docs.length === 0 });
             }
         } catch (err) {
             if (errorCallback) errorCallback(err);
-            else console.error("onSnapshot stream error:", err);
+            else console.error(`[Supabase Realtime Error] ${table}:`, err);
         }
     };
 
     stream();
-    const sub = supabase.channel(`pub-${table}-${id || 'list'}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => stream()).subscribe();
+    const channelId = `pub-${table}-${id || 'list'}-${Math.random().toString(36).substr(2, 5)}`;
+    const sub = supabase.channel(channelId)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+            stream();
+        })
+        .subscribe();
+    
     return () => { supabase.removeChannel(sub); };
 };
 
