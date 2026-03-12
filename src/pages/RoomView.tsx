@@ -749,89 +749,99 @@ export default function RoomView({ user }: { user: any }) {
         <main className="flex-1 w-full max-w-[1800px] mx-auto px-4 md:px-8 py-6 grid px-4 grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-h-[calc(100vh-80px)] items-start">
     <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-6 sticky top-28 h-[calc(100vh-120px)] overflow-y-auto no-scrollbar scroll-smooth pb-10">
 
-          {/* Participant List & Ready Bar */}
+          {/* Participant List & Ready Bar (Sidebar Widget) */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-[2rem] p-4 flex items-center justify-between overflow-hidden relative"
+            className="glass-dark rounded-[2.5rem] p-6 flex flex-col gap-6 overflow-hidden relative shadow-lg"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent pointer-events-none" />
-
-            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar relative z-10">
-              <div className="flex -space-x-3">
-                {participants.map((p) => (
-                  <motion.div
-                    key={p.uid}
-                    layout
-                    className="relative group"
-                  >
-                    <div className={`relative p-0.5 rounded-full transition-all duration-500 ${room?.readyUsers?.includes(p.uid) ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 scale-110 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'glass-dark/10'}`}>
-                      <img
-                        src={p.photoURL}
-                        alt={p.displayName}
-                        className={`w-10 h-10 rounded-full border-2 border-slate-900 object-cover ${room?.readyUsers?.includes(p.uid) ? 'animate-pulse' : ''}`}
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div className="absolute -bottom-1 -right-1">
-                      {room?.readyUsers?.includes(p.uid) ? (
-                        <div className="bg-emerald-500 rounded-full p-1 border-2 border-slate-900 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-                          <Check className="w-2 h-2 text-white" />
-                        </div>
-                      ) : (
-                        <div className="bg-slate-700 rounded-full p-1 border-2 border-slate-900">
-                          <Clock className="w-2 h-2 text-white" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tooltip */}
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-1.5 glass-dark text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-50 pointer-events-none translate-y-2 group-hover:translate-y-0">
-                      {p.displayName} {room?.readyUsers?.includes(p.uid) ? '(مستعد)' : ''}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-              <div className="text-sm font-medium text-slate-400 whitespace-nowrap">
-                <span className="text-white font-bold">{activeUsers.length}</span> متصل من أصل {participants.length}
+            <div className="flex items-center justify-between p-2">
+              <h3 className="text-xl font-black text-amber-400 flex items-center gap-3">
+                <Users className="w-6 h-6" />
+                المجلس
+              </h3>
+              <div className="px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs font-bold text-slate-300">
+                {activeUsers.length} من {participants.length} متصل
               </div>
             </div>
 
+            <div className="flex flex-col gap-3">
+              {participants.map((p) => (
+                <motion.div
+                  key={p.uid}
+                  layout
+                  className={`flex items-center gap-4 p-3 rounded-2xl border transition-all duration-300 ${
+                    room?.readyUsers?.includes(p.uid)
+                      ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                      : 'bg-white/5 border-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="relative">
+                    <img
+                      src={p.photoURL}
+                      alt={p.displayName}
+                      className={`w-12 h-12 rounded-full border-2 object-cover ${
+                        room?.readyUsers?.includes(p.uid) ? 'border-emerald-400' : 'border-slate-600'
+                      } ${!activeUsers.includes(p.uid) && 'opacity-50 grayscale'}`}
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute -bottom-1 -right-1">
+                      {room?.readyUsers?.includes(p.uid) ? (
+                        <div className="bg-emerald-500 rounded-full p-1 border-2 border-[#1E293B]">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      ) : (
+                        <div className="bg-slate-700 rounded-full p-1 border-2 border-[#1E293B]">
+                          <Clock className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col flex-1">
+                    <span className="font-bold text-white text-sm">{p.displayName}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {room?.hostId === p.uid ? 'المضيف' : room?.readyUsers?.includes(p.uid) ? 'مستعد للتلاوة' : 'في الانتظار'}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
             {room?.status === 'waiting' && (
-              <button
-                onClick={handleReady}
-                className={`group relative z-10 overflow-hidden px-8 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-105 active:scale-95 flex items-center gap-3 ${
-                  room?.readyUsers?.includes(user.uid)
-                    ? 'shadow-[0_0_30px_rgba(16,185,129,0.5)] border border-emerald-400/50'
-                    : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]'
-                }`}
-              >
-                {/* Background effect */}
-                <div className={`absolute inset-0 transition-opacity duration-500 ${
-                  room?.readyUsers?.includes(user.uid)
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 opacity-100'
-                    : 'bg-white/5 opacity-100 group-hover:bg-gradient-to-r group-hover:from-emerald-600/20 group-hover:to-teal-600/20'
-                }`} />
-                
-                {/* Content */}
-                <div className="relative z-10 flex items-center gap-3">
-                  {room?.readyUsers?.includes(user.uid) ? (
-                    <>
-                      <div className="bg-white/20 p-1.5 rounded-full shadow-inner inset-shadow-sm flex items-center justify-center">
-                        <Check className="w-5 h-5 text-white" />
-                      </div>
-                      <span className="text-white text-lg tracking-wide drop-shadow-md">أنا مستعد</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="bg-emerald-500/20 p-1.5 rounded-full group-hover:bg-emerald-400 group-hover:text-amber-900 transition-colors flex items-center justify-center">
-                        <Clock className="w-5 h-5 text-emerald-400 group-hover:text-emerald-950 animate-pulse" />
-                      </div>
-                      <span className="text-slate-200 group-hover:text-white transition-colors text-lg tracking-wide">تأكيد الاستعداد</span>
-                    </>
-                  )}
-                </div>
-              </button>
+              <div className="pt-2 border-t border-white/10 mt-2">
+                <button
+                  onClick={handleReady}
+                  className={`group relative w-full overflow-hidden px-6 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
+                    room?.readyUsers?.includes(user.uid)
+                      ? 'shadow-[0_0_30px_rgba(16,185,129,0.5)] border border-emerald-400/50'
+                      : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                  }`}
+                >
+                  <div className={`absolute inset-0 transition-opacity duration-500 ${
+                    room?.readyUsers?.includes(user.uid)
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 opacity-100'
+                      : 'bg-white/5 opacity-100 group-hover:bg-gradient-to-r group-hover:from-emerald-600/20 group-hover:to-teal-600/20'
+                  }`} />
+                  
+                  <div className="relative z-10 flex items-center justify-center gap-3 w-full">
+                    {room?.readyUsers?.includes(user.uid) ? (
+                      <>
+                        <div className="bg-white/20 p-1.5 rounded-full shadow-inner inset-shadow-sm flex items-center justify-center">
+                          <Check className="w-5 h-5 text-white" />
+                        </div>
+                        <span className="text-white text-lg tracking-wide drop-shadow-md">أنا مستعد</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="bg-emerald-500/20 p-1.5 rounded-full group-hover:bg-emerald-400 group-hover:text-amber-900 transition-colors flex items-center justify-center">
+                          <Clock className="w-5 h-5 text-emerald-400 group-hover:text-emerald-950 animate-pulse" />
+                        </div>
+                        <span className="text-slate-200 group-hover:text-white transition-colors text-lg tracking-wide">تأكيد الاستعداد</span>
+                      </>
+                    )}
+                  </div>
+                </button>
+              </div>
             )}
           </motion.div>
 
@@ -1105,7 +1115,7 @@ export default function RoomView({ user }: { user: any }) {
       {/* Game Area */}
           <motion.div
             layout
-            className="glass rounded-[2.5rem] p-8 min-h-[450px] flex flex-col items-center justify-center relative overflow-hidden group"
+            className="glass-dark rounded-[2.5rem] p-8 min-h-[500px] flex-1 flex flex-col items-center justify-center relative overflow-hidden group shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/5"
           >
             {/* Background Decoration */}
             <div className={`absolute top-0 left-0 w-full h-1.5 ${theme.bg} opacity-30 group-hover:opacity-60 transition-opacity duration-500`}></div>
