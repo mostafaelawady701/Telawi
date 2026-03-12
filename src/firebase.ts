@@ -1,13 +1,14 @@
 
+import { createClient } from '@supabase/supabase-js';
 import { io } from 'socket.io-client';
 
-// On Vercel, relative path for socket.io might fail, we try to use relative but fallback
-const socket = io({
-    path: '/socket.io/',
-    transports: ['polling'] // Polling is more stable on Serverless
-});
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
 
-// --- Auth Mock ---
+export const supabase = createClient(supabaseUrl, supabaseKey);
+const socket = io({ path: '/socket.io/', transports: ['polling'] });
+
+// --- Auth Mock (Local for session, but we could use Supabase Auth if needed later) ---
 const STORAGE_USER_KEY = 'telawa_user';
 export const auth: any = { currentUser: null };
 
@@ -45,125 +46,114 @@ export const onAuthStateChanged = (authObj: any, callback: (user: any) => void) 
     return () => { };
 };
 
-// --- Firestore Mock (Talking to Server) ---
+// --- "Firestore" API Mapped to Supabase ---
 export const db: any = {};
 
 export const collection = (db_or_ref: any, ...path: string[]) => {
-    return { collName: path.join('/') };
+    return { table: path[path.length - 1], path: path.join('/') };
 };
 
 export const doc = (db_or_ref: any, ...path: string[]) => {
-    let base = (db_or_ref && db_or_ref.collName) ? db_or_ref.collName + '/' : '';
-    const fullPath = base + path.join('/');
-    const lastSlash = fullPath.lastIndexOf('/');
+    let fullPath = (db_or_ref && db_or_ref.path) ? db_or_ref.path + '/' : '';
+    fullPath += path.join('/');
+    const parts = fullPath.split('/');
     return {
-        collName: fullPath.substring(0, lastSlash),
-        id: fullPath.substring(lastSlash + 1)
+        table: parts[parts.length - 2],
+        id: parts[parts.length - 1],
+        path: fullPath
     };
 };
 
-export const addDoc = async (collName_or_ref: any, data: any) => {
-    const collName = collName_or_ref.collName || collName_or_ref;
-    try {
-        const res = await fetch(`/api/data/${collName}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        if (!res.ok) throw new Error("Server error");
-        return res.json();
-    } catch (e) {
-        console.error("API Error:", e);
-        // Local fallback if API fails
-        return { id: Math.random().toString(36).substr(2, 9), ...data };
-    }
+export const addDoc = async (collRef: any, data: any) => {
+    const { table } = collRef;
+    const { data: inserted, error } = await supabase
+        .from(table)
+        .insert([{ ...data, created_at: new Date() }])
+        .select()
+        .single();
+
+    if (error) console.error("Supabase Add Error:", error);
+    return inserted;
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-    const { collName, id } = docRef;
-    await fetch(`/api/data/${collName}/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    });
+    const { table, id } = docRef;
+    const { error } = await supabase
+        .from(table)
+        .update(data)
+        .eq('id', id);
+    if (error) console.error("Supabase Update Error:", error);
 };
 
 export const deleteDoc = async (docRef: any) => {
-    await fetch(`/api/data/${docRef.collName}/${docRef.id}`, {
-        method: 'DELETE'
-    });
+    const { table, id } = docRef;
+    const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id);
+    if (error) console.error("Supabase Delete Error:", error);
 };
 
 export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void) => {
-    const collName = queryOrRef.collName || queryOrRef;
+    const table = queryOrRef.table;
+    const id = queryOrRef.id;
 
-    const refresh = async () => {
-        try {
-            if (queryOrRef.id) {
-                const res = await fetch(`/api/data/${collName}/${queryOrRef.id}`);
-                const data = await res.json();
-                callback({
-                    exists: () => !!data,
-                    id: queryOrRef.id,
-                    data: () => data
-                });
-            } else {
-                const res = await fetch(`/api/data/${collName}`);
-                if (!res.ok) return;
-                const dataObj = await res.json();
-                const docs = Object.values(dataObj).map((d: any) => ({
-                    id: d.id,
-                    ref: { collName, id: d.id },
-                    data: () => d
-                }));
-                callback({ docs });
-            }
-        } catch (e) {
-            console.error("Polling error:", e);
+    // Initial fetch
+    const fetchData = async () => {
+        if (id) {
+            const { data } = await supabase.from(table).select().eq('id', id).single();
+            callback({
+                exists: () => !!data,
+                id: id,
+                data: () => data
+            });
+        } else {
+            const { data } = await supabase.from(table).select().order('created_at', { ascending: false });
+            const docs = (data || []).map(d => ({
+                id: d.id,
+                ref: { table, id: d.id },
+                data: () => d
+            }));
+            callback({ docs });
         }
     };
 
-    refresh();
+    fetchData();
 
-    // Polling fallback (every 5 seconds) as backup for Vercel
-    const pollingInterval = setInterval(refresh, 5000);
-
-    // Try socket sync if available
-    const eventName = `data-changed:${collName}`;
-    socket.on(eventName, refresh);
+    // Subscribe to real-time changes
+    const subscription = supabase
+        .channel(`public:${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: table }, (payload) => {
+            fetchData();
+        })
+        .subscribe();
 
     return () => {
-        clearInterval(pollingInterval);
-        socket.off(eventName, refresh);
+        supabase.removeChannel(subscription);
     };
 };
 
-export const getDocs = async (collNameOrQuery: any) => {
-    const collName = collNameOrQuery.collName || collNameOrQuery;
-    const res = await fetch(`/api/data/${collName}`);
-    if (!res.ok) return { docs: [], empty: true };
-    const dataObj = await res.json();
-    const docs = Object.values(dataObj).map((d: any) => ({
+export const getDocs = async (collRef: any) => {
+    const { table } = collRef;
+    const { data, error } = await supabase.from(table).select();
+    const docs = (data || []).map(d => ({
         id: d.id,
-        ref: { collName, id: d.id },
+        ref: { table, id: d.id },
         data: () => d
     }));
-    return {
-        docs,
-        empty: docs.length === 0
-    };
+    return { docs, empty: docs.length === 0 };
 };
 
 export const getDoc = async (docRef: any) => {
-    const res = await fetch(`/api/data/${docRef.collName}/${docRef.id}`);
-    const data = await res.json();
+    const { table, id } = docRef;
+    const { data } = await supabase.from(table).select().eq('id', id).single();
     return {
         exists: () => !!data,
         data: () => data
     };
 };
 
-// Dummy constants
+// Dummy exports
 export const query = (c: any) => c;
 export const orderBy = () => ({});
 export const limit = () => ({});
