@@ -799,22 +799,37 @@ export default function RoomView({ user }: { user: any }) {
             {room?.status === 'waiting' && (
               <button
                 onClick={handleReady}
-                className={`relative z-10 px-8 py-3 rounded-2xl font-bold transition-all duration-500 transform hover:scale-105 active:scale-95 flex items-center gap-3 ${room?.readyUsers?.includes(user.uid)
-                  ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)]'
-                  : 'glass-dark/10 text-white border border-white/10 hover:glass-dark/10'
-                  }`}
+                className={`group relative z-10 overflow-hidden px-8 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-105 active:scale-95 flex items-center gap-3 ${
+                  room?.readyUsers?.includes(user.uid)
+                    ? 'shadow-[0_0_30px_rgba(16,185,129,0.5)] border border-emerald-400/50'
+                    : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                }`}
               >
-                {room?.readyUsers?.includes(user.uid) ? (
-                  <>
-                    <Check className="w-5 h-5" />
-                    <span>أنا مستعد</span>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-5 h-5 animate-pulse" />
-                    <span>تأكيد الاستعداد</span>
-                  </>
-                )}
+                {/* Background effect */}
+                <div className={`absolute inset-0 transition-opacity duration-500 ${
+                  room?.readyUsers?.includes(user.uid)
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 opacity-100'
+                    : 'bg-white/5 opacity-100 group-hover:bg-gradient-to-r group-hover:from-emerald-600/20 group-hover:to-teal-600/20'
+                }`} />
+                
+                {/* Content */}
+                <div className="relative z-10 flex items-center gap-3">
+                  {room?.readyUsers?.includes(user.uid) ? (
+                    <>
+                      <div className="bg-white/20 p-1.5 rounded-full shadow-inner inset-shadow-sm flex items-center justify-center">
+                        <Check className="w-5 h-5 text-white" />
+                      </div>
+                      <span className="text-white text-lg tracking-wide drop-shadow-md">أنا مستعد</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bg-emerald-500/20 p-1.5 rounded-full group-hover:bg-emerald-400 group-hover:text-amber-900 transition-colors flex items-center justify-center">
+                        <Clock className="w-5 h-5 text-emerald-400 group-hover:text-emerald-950 animate-pulse" />
+                      </div>
+                      <span className="text-slate-200 group-hover:text-white transition-colors text-lg tracking-wide">تأكيد الاستعداد</span>
+                    </>
+                  )}
+                </div>
               </button>
             )}
           </motion.div>
