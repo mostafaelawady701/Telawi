@@ -78,9 +78,37 @@ export const addDoc = async (collRef: any, data: any) => {
 
 export const updateDoc = async (docRef: any, data: any) => {
     const { table, id } = docRef;
+    
+    // Support arrayUnion/arrayRemove (mock implementation: fetch then update)
+    const hasArrayOp = Object.values(data).some(v => v && typeof v === 'object' && (v as any)._type === 'arrayOp');
+    
+    let finalData = { ...data };
+    if (hasArrayOp) {
+        const { data: current } = await supabase.from(table).select().eq('id', id).single();
+        if (current) {
+            for (const key in data) {
+                const val = data[key];
+                if (val && typeof val === 'object' && val._type === 'arrayOp') {
+                    const currentArray = Array.isArray(current[key]) ? current[key] : [];
+                    if (val.op === 'union') {
+                        if (!currentArray.includes(val.value)) {
+                            finalData[key] = [...currentArray, val.value];
+                        } else {
+                            delete finalData[key];
+                        }
+                    } else if (val.op === 'remove') {
+                        finalData[key] = currentArray.filter((v: any) => v !== val.value);
+                    }
+                }
+            }
+        }
+    }
+
+    if (Object.keys(finalData).length === 0) return;
+
     const { error } = await supabase
         .from(table)
-        .update(data)
+        .update(finalData)
         .eq('id', id);
     if (error) console.error("Supabase Update Error:", error);
 };
@@ -153,12 +181,12 @@ export const getDoc = async (docRef: any) => {
     };
 };
 
-// Dummy exports
-export const query = (c: any) => c;
-export const orderBy = () => ({});
-export const limit = () => ({});
-export const arrayUnion = (item: any) => item;
-export const arrayRemove = (item: any) => item;
+// --- Mock Firestore Query DSL ---
+export const query = (c: any, ...args: any[]) => c;
+export const orderBy = (...args: any[]) => ({});
+export const limit = (...args: any[]) => ({});
+export const arrayUnion = (item: any) => ({ _type: 'arrayOp', op: 'union', value: item });
+export const arrayRemove = (item: any) => ({ _type: 'arrayOp', op: 'remove', value: item });
 export const setDoc = updateDoc;
 export const loginWithGoogle = loginAnonymously;
 export const writeBatch = () => ({

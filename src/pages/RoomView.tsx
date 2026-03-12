@@ -811,32 +811,33 @@ export default function RoomView({ user }: { user: any }) {
               <div className="pt-2 border-t border-white/10 mt-2">
                 <button
                   onClick={handleReady}
+                  disabled={!user}
                   className={`group relative w-full overflow-hidden px-6 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
                     room?.readyUsers?.includes(user.uid)
-                      ? 'shadow-[0_0_30px_rgba(16,185,129,0.5)] border border-emerald-400/50'
-                      : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                      ? 'shadow-[0_0_40px_rgba(16,185,129,0.3)] border border-emerald-400/40 bg-emerald-500/10'
+                      : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.2)]'
                   }`}
                 >
-                  <div className={`absolute inset-0 transition-opacity duration-500 ${
+                  <div className={`absolute inset-0 transition-all duration-700 ${
                     room?.readyUsers?.includes(user.uid)
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 opacity-100'
-                      : 'bg-white/5 opacity-100 group-hover:bg-gradient-to-r group-hover:from-emerald-600/20 group-hover:to-teal-600/20'
+                      ? 'bg-gradient-to-tr from-emerald-600/20 via-emerald-500/10 to-teal-400/20 opacity-100'
+                      : 'bg-white/5 opacity-0 group-hover:opacity-100 group-hover:bg-gradient-to-tr group-hover:from-emerald-600/10 group-hover:to-teal-600/10'
                   }`} />
                   
                   <div className="relative z-10 flex items-center justify-center gap-3 w-full">
                     {room?.readyUsers?.includes(user.uid) ? (
                       <>
-                        <div className="bg-white/20 p-1.5 rounded-full shadow-inner inset-shadow-sm flex items-center justify-center">
-                          <Check className="w-5 h-5 text-white" />
+                        <div className="bg-emerald-500 p-1.5 rounded-full shadow-lg flex items-center justify-center animate-pulse">
+                          <Check className="w-4 h-4 text-white" />
                         </div>
-                        <span className="text-white text-lg tracking-wide drop-shadow-md">أنا مستعد</span>
+                        <span className="text-emerald-400 text-lg tracking-wider drop-shadow-md font-arabic">أنا مستعد الآن</span>
                       </>
                     ) : (
                       <>
-                        <div className="bg-emerald-500/20 p-1.5 rounded-full group-hover:bg-emerald-400 group-hover:text-amber-900 transition-colors flex items-center justify-center">
-                          <Clock className="w-5 h-5 text-emerald-400 group-hover:text-emerald-950 animate-pulse" />
+                        <div className="bg-white/10 p-1.5 rounded-full group-hover:bg-emerald-500 transition-all duration-500 flex items-center justify-center">
+                          <Clock className="w-4 h-4 text-slate-400 group-hover:text-white" />
                         </div>
-                        <span className="text-slate-200 group-hover:text-white transition-colors text-lg tracking-wide">تأكيد الاستعداد</span>
+                        <span className="text-slate-300 group-hover:text-white transition-colors text-lg tracking-wider font-arabic">تأكيد الاستعداد</span>
                       </>
                     )}
                   </div>
@@ -1214,19 +1215,49 @@ export default function RoomView({ user }: { user: any }) {
                         </motion.div>
                       )}
                     </div>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={startNewRound}
-                      disabled={isStartingRound || (room.readyUsers?.length || 0) < 1}
-                      className={`w-full py-5 rounded-[2rem] font-black text-xl shadow-2xl transition-all duration-500 flex items-center justify-center gap-3 group/btn ${isStartingRound || (room.readyUsers?.length || 0) < 1
-                        ? 'glass-dark/5 text-slate-400 cursor-not-allowed border border-white/5'
-                        : `bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-900/40`
+                    <div className="w-full pt-4">
+                      {room.readyUsers?.length === 0 && (
+                        <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-[0.2em] mb-4 text-center animate-pulse">
+                          ⚠️ بانتظار استعداد أحد المشاركين على الأقل
+                        </p>
+                      )}
+                      <motion.button
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={startNewRound}
+                        disabled={isStartingRound}
+                        className={`w-full py-6 rounded-[2.5rem] font-black text-2xl shadow-2xl transition-all duration-700 flex items-center justify-center gap-4 group/btn relative overflow-hidden ${
+                          isStartingRound
+                            ? 'glass-dark/10 text-slate-500 cursor-not-allowed border border-white/5'
+                            : (room.readyUsers?.length || 0) < 1 
+                              ? 'bg-slate-800/50 text-slate-400 border border-white/5 hover:border-emerald-500/30'
+                              : `bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-emerald-900/40 border border-emerald-400/20`
                         }`}
-                    >
-                      {isStartingRound ? <Loader2 className="w-6 h-6 animate-spin" /> : <Play className="w-6 h-6 group-hover/btn:scale-110 transition-transform" />}
-                      بدء الجولة
-                    </motion.button>
+                      >
+                        {/* Shimmer Effect */}
+                        {!isStartingRound && (room.readyUsers?.length || 0) > 0 && (
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                        )}
+                        
+                        {isStartingRound ? (
+                          <Loader2 className="w-8 h-8 animate-spin" />
+                        ) : (
+                          <>
+                            <div className={`p-2 rounded-xl transition-all duration-500 ${
+                              (room.readyUsers?.length || 0) < 1 ? 'bg-white/5' : 'bg-white/20 shadow-lg'
+                            }`}>
+                              <Play className="w-6 h-6 fill-current" />
+                            </div>
+                            <span className="tracking-widest font-arabic">إطلاق الجولة الآن</span>
+                            {room.readyUsers && room.readyUsers.length > 0 && (
+                              <div className="bg-black/20 px-3 py-1 rounded-full text-xs font-bold border border-white/10">
+                                {room.readyUsers.length} جاهز
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
                   </div>
                 )}
               </div>

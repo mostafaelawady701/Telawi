@@ -62,6 +62,7 @@ export default function Dashboard({ user }: { user: any }) {
         maxParticipants: newMaxParticipants,
         recordingDuration: newRecordingDuration,
         createdAt: Date.now(),
+        readyUsers: [],
         theme: {
           color: newThemeColor,
           backgroundImage: newThemeBg || bgPresets[0].url
