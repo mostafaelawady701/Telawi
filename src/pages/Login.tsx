@@ -1,15 +1,35 @@
 import React, { useState } from 'react';
 import { loginWithUsername, loginAnonymously } from '../firebase';
-import { BookOpen, LogIn, Users, User, Sparkles } from 'lucide-react';
+import { BookOpen, LogIn, Users, User, Sparkles, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim()) {
-      loginWithUsername(username);
+    if (username.trim() && !isLoading) {
+      setIsLoading(true);
+      try {
+        await loginWithUsername(username);
+      } catch (error) {
+        console.error("Login Error:", error);
+        alert("فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.");
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      await loginAnonymously();
+    } catch (error) {
+      console.error("Guest Login Error:", error);
+      alert("فشل دخول الزائر.");
+      setIsLoading(false);
     }
   };
 
@@ -52,7 +72,8 @@ export default function Login() {
                 placeholder="أدخل اسمك الكريم..."
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pr-14 pl-5 py-4 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/10 outline-none transition-all duration-300 relative z-10 shadow-inner"
+                disabled={isLoading}
+                className="w-full pr-14 pl-5 py-4 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/10 outline-none transition-all duration-300 relative z-10 shadow-inner disabled:opacity-50"
                 required
               />
             </div>
@@ -60,11 +81,12 @@ export default function Login() {
 
           <button
             type="submit"
-            className="group relative w-full overflow-hidden rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-all duration-300"
+            disabled={isLoading}
+            className="group relative w-full overflow-hidden rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-all duration-300 disabled:opacity-70"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-600 transition-transform duration-500 group-hover:scale-[1.05]"></div>
             <div className="relative w-full flex items-center justify-center gap-3 py-4 px-6 font-bold text-white text-lg">
-              <LogIn className="w-6 h-6 animate-pulse-glow" />
+              {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <LogIn className="w-6 h-6 animate-pulse-glow" />}
               دخول المجلس
             </div>
           </button>
@@ -78,17 +100,18 @@ export default function Login() {
 
           <button
             type="button"
-            onClick={() => loginAnonymously()}
-            className="w-full flex items-center justify-center gap-3 bg-white/5 text-slate-300 border border-white/10 py-4 px-6 rounded-2xl font-semibold hover:bg-white/10 hover:text-white transition-all duration-300 hover:border-emerald-500/30"
+            onClick={handleGuestLogin}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-3 bg-white/5 text-slate-300 border border-white/10 py-4 px-6 rounded-2xl font-semibold hover:bg-white/10 hover:text-white transition-all duration-300 hover:border-emerald-500/30 disabled:opacity-50"
           >
-            <Users className="w-5 h-5 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Users className="w-5 h-5 text-slate-400 group-hover:text-emerald-400 transition-colors" />}
             الدخول كزائر
           </button>
         </form>
 
         <p className="text-xs text-slate-500 text-center mt-10 opacity-70 flex flex-col items-center gap-1">
-          <span>يتم حفظ بيانات الجلسة بأمان تام.</span>
-          <span className="font-sans text-[10px] tracking-widest text-slate-600">v2.0 PRO</span>
+          <span>يتم حفظ بيانات الجلسة بأمان تام في السحابة.</span>
+          <span className="font-sans text-[10px] tracking-widest text-slate-600">v3.0 ENTERPRISE</span>
         </p>
       </motion.div>
     </div>

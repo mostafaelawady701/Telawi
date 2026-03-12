@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, logout, collection, addDoc, onSnapshot, query, orderBy, limit, updateDoc, doc, arrayUnion, getDocs, deleteDoc } from '../firebase';
-import { Plus, LogOut, Users, Mic, Shuffle, Sparkles, Radio, Trophy, Search, BookOpen, Settings, X, Loader2, Copy, Check, MessageSquare, Heart, Star, Crown } from 'lucide-react';
+import { db, logout, collection, addDoc, onSnapshot, query, orderBy, limit, updateDoc, doc, arrayUnion, getDocs, deleteDoc, getUserStats, getGlobalLeaderboard } from '../firebase';
+import { Plus, LogOut, Users, Mic, Shuffle, Sparkles, Radio, Trophy, Search, BookOpen, Settings, X, Loader2, Copy, Check, MessageSquare, Heart, Star, Crown, TrendingUp, Award } from 'lucide-react';
 import { Room } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -18,6 +18,8 @@ export default function Dashboard({ user }: { user: any }) {
 
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [stats, setStats] = useState({ totalScore: 0, count: 0, average: 0 });
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const navigate = useNavigate();
 
   const themePresets = [
@@ -38,6 +40,18 @@ export default function Dashboard({ user }: { user: any }) {
         setRooms(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() })));
       }
     });
+
+    // Fetch Stats & Leaderboard
+    const fetchStats = async () => {
+      if (user?.uid) {
+        const s = await getUserStats(user.uid);
+        setStats(s);
+      }
+      const lb = await getGlobalLeaderboard(5);
+      setLeaderboard(lb);
+    };
+    fetchStats();
+
     return unsubscribe;
   }, []);
 
@@ -176,18 +190,39 @@ export default function Dashboard({ user }: { user: any }) {
               animate={{ opacity: 1, x: 0 }}
               className="relative hidden lg:block"
             >
-               <div className="aspect-square w-full max-w-md mx-auto glass-emerald rounded-[3rem] p-1 rotate-3 shadow-[0_0_100px_rgba(16,185,129,0.1)]">
-                 <div className="w-full h-full bg-emerald-500/10 flex items-center justify-center">
-                    <Sparkles className="w-32 h-32 text-emerald-500/20" />
-                 </div>
-                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="p-8 glass-dark rounded-3xl border border-white/10 animate-float translate-x-12">
-                       <Radio className="w-12 h-12 text-emerald-400 mb-4 animate-pulse" />
-                       <p className="text-white font-black text-xl">بث مباشر</p>
-                       <p className="text-slate-400 text-xs mt-1">12 قارئ متصل الآن</p>
+                <div className="aspect-square w-full max-w-md mx-auto glass-emerald rounded-[3rem] p-8 shadow-[0_0_100px_rgba(16,185,129,0.1)] relative">
+                  <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-3">
+                    <Trophy className="text-gold-400 w-8 h-8" />
+                    مجلس المتصدرين
+                  </h3>
+                  <div className="space-y-4">
+                    {leaderboard.map((u, i) => (
+                      <div key={u.id} className="flex items-center justify-between p-4 glass-dark rounded-2xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl font-black text-emerald-400/50 w-6">#{i+1}</span>
+                          <img src={u.photoURL} alt="" className="w-10 h-10 rounded-full border border-white/10" />
+                          <span className="font-bold text-white text-sm">{u.displayName}</span>
+                        </div>
+                        {i === 0 && <Crown className="w-5 h-5 text-amber-400" />}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-8 pt-8 border-t border-white/5 flex justify-between">
+                    <div className="text-center">
+                      <p className="text-[10px] text-slate-500 uppercase font-black">جولاتك</p>
+                      <p className="text-2xl font-black text-emerald-400">{stats.count}</p>
                     </div>
-                 </div>
-               </div>
+                    <div className="text-center">
+                      <p className="text-[10px] text-slate-500 uppercase font-black">نقاطك</p>
+                      <p className="text-2xl font-black text-gold-400">{stats.totalScore}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[10px] text-slate-500 uppercase font-black">الرتبة</p>
+                      <p className="text-lg font-black text-white">{stats.totalScore > 1000 ? 'شيخ' : 'قارئ'}</p>
+                    </div>
+                  </div>
+                </div>
             </motion.div>
           </div>
         </section>
