@@ -106,9 +106,8 @@ export default function Login() {
           style={{ background: 'radial-gradient(ellipse, rgba(16,185,129,0.15) 0%, transparent 70%)', filter: 'blur(1px)' }}
         />
         {/* Gold accent glow */}
-        <div className="absolute bottom-[-10%] right-[-5%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px]"
+        <div className="absolute bottom-[-10%] right-[-5%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] animate-float-slow"
           style={{ background: 'radial-gradient(ellipse, rgba(217,119,6,0.1) 0%, transparent 70%)', filter: 'blur(1px)' }}
-          className="animate-float-slow"
         />
         {/* Islamic geometric pattern overlay */}
         <div className="absolute inset-0 islamic-pattern opacity-100" />

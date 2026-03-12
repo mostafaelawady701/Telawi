@@ -74,7 +74,7 @@
 }
 
 /* ─── Glass Effects ─────────────────────────────────────── */
-.glass {
+@utility glass {
   background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -82,7 +82,7 @@
   box-shadow: 0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 
-.glass-dark {
+@utility glass-dark {
   background: rgba(15, 23, 42, 0.75);
   backdrop-filter: blur(28px) saturate(200%);
   -webkit-backdrop-filter: blur(28px) saturate(200%);
@@ -90,7 +90,7 @@
   box-shadow: 0 16px 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
-.glass-emerald {
+@utility glass-emerald {
   background: rgba(6, 78, 59, 0.25);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -98,7 +98,7 @@
   box-shadow: 0 0 40px rgba(16,185,129,0.08), inset 0 1px 0 rgba(16,185,129,0.1);
 }
 
-.glass-gold {
+@utility glass-gold {
   background: rgba(120, 53, 15, 0.2);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -106,7 +106,7 @@
   box-shadow: 0 0 40px rgba(245,158,11,0.06), inset 0 1px 0 rgba(245,158,11,0.1);
 }
 
-.glass-premium {
+@utility glass-premium {
   background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%);
   backdrop-filter: blur(32px) saturate(220%) brightness(1.1);
   -webkit-backdrop-filter: blur(32px) saturate(220%) brightness(1.1);
@@ -450,12 +450,12 @@
 }
 
 /* ─── Status Pill ────────────────────────────────────────── */
-.status-live {
+@utility status-live {
   @apply px-3 py-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 rounded-full text-xs font-black uppercase tracking-widest;
   box-shadow: 0 0 12px rgba(16,185,129,0.15);
 }
 
-.status-waiting {
+@utility status-waiting {
   @apply px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/15 rounded-full text-xs font-black uppercase tracking-widest;
 }
 
