@@ -13,7 +13,7 @@ export interface Room {
   status: 'waiting' | 'playing';
   currentRoundId?: string;
   participants: string[];
-  readyUsers?: string[]; // New field
+
   maxParticipants?: number;
   recordingDuration?: number;
   theme?: {

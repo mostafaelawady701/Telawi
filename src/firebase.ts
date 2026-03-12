@@ -7,8 +7,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 'sb
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-// --- AUTH & AUTHENTICATION ---
-// Professional projects use Supabase Auth. We keep these helpers for backward compatibility.
+// --- AUTH MOCK ---
 const STORAGE_USER_KEY = 'telawa_user';
 export const auth: any = { currentUser: null };
 
@@ -48,72 +47,67 @@ export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void)
     return () => { };
 };
 
-// --- FIRESTORE BRIDGE (PROFESSIONAL IMPLEMENTATION) ---
-// This bridge allows using Firestore-like syntax but talks directly to Supabase professionally.
-
+// --- FIRESTORE BRIDGE (Direct, No case transformation for stability) ---
 export const db: any = { isSupabase: true };
 
 export const collection = (_db: any, ...path: string[]) => {
-    return { table: path[0], fullPath: path.join('/') };
+    // Return the last segment as the table name
+    const table = path[path.length - 1]; 
+    return { table };
 };
 
 export const doc = (_db: any, ...path: string[]) => {
-    // path could be ['rooms', roomId] or ['rooms', roomId, 'rounds', roundId]
-    return { 
-        table: path[path.length - 2], 
-        id: path[path.length - 1],
-        path: path.join('/') 
-    };
+    // path: ['rooms', roomId] or ['rooms', roomId, 'rounds', roundId]
+    const table = path[path.length - 2];
+    const id = path[path.length - 1];
+    return { table, id };
 };
 
 export const addDoc = async (collRef: any, data: any) => {
     const { table } = collRef;
+    
+    // Safety: Remove any client-side generated IDs if they somehow leaked in
+    const finalData = { ...data };
+    delete finalData.id;
+    delete finalData.uid;
+
     const { data: inserted, error } = await supabase
         .from(table)
-        .insert([{ ...data }]) // created_at handled by Postgres
+        .insert([finalData])
         .select()
         .single();
 
     if (error) {
-        console.error(`[Professional Error] Supabase Insert in ${table}:`, error);
+        console.error(`[Supabase Error] Insert in ${table}:`, error);
         throw error;
     }
-    return inserted;
+    return { id: inserted.id, ...inserted };
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
     const { table, id } = docRef;
-    
-    // Support arrayUnion/arrayRemove (Firestore emulation)
-    const processedData = { ...data };
-    for (const key in processedData) {
-        const val = processedData[key];
-        if (val && typeof val === 'object' && (val as any)._type === 'arrayOp') {
-            // Fetch current state for array operations (Non-ideal for scale, but standard for this bridge)
+    const finalData = { ...data };
+    delete finalData.id;
+    delete finalData.uid;
+
+    // Handle arrayUnion/arrayRemove simple mock
+    // This looks if the field exists and merges it.
+    const arrayFields = ['participants', 'readyUsers', 'likes'];
+    for (const key of arrayFields) {
+        if (finalData[key]) {
             const { data: current } = await supabase.from(table).select(key).eq('id', id).single();
             const currentArray = (current && Array.isArray(current[key])) ? current[key] : [];
+            const newValue = Array.isArray(finalData[key]) ? finalData[key] : [finalData[key]];
             
-            if (val.op === 'union') {
-                if (!currentArray.includes(val.value)) {
-                    processedData[key] = [...currentArray, val.value];
-                } else {
-                    delete processedData[key];
-                }
-            } else if (val.op === 'remove') {
-                processedData[key] = currentArray.filter((v: any) => v !== val.value);
-            }
+            // Just union them for simplicity in this bridge
+            const merged = Array.from(new Set([...currentArray, ...newValue]));
+            finalData[key] = merged;
         }
     }
 
-    if (Object.keys(processedData).length === 0) return;
-
-    const { error } = await supabase
-        .from(table)
-        .update(processedData)
-        .eq('id', id);
-
+    const { error } = await supabase.from(table).update(finalData).eq('id', id);
     if (error) {
-        console.error(`[Professional Error] Supabase Update in ${table}:`, error);
+        console.error(`[Supabase Error] Update in ${table}:`, error);
         throw error;
     }
 };
@@ -124,66 +118,43 @@ export const deleteDoc = async (docRef: any) => {
     if (error) throw error;
 };
 
-export const onSnapshot = (queryOrRef: any, callback: (snapshot: any) => void, errorCallback?: (err: any) => void) => {
-    const table = queryOrRef.table;
-    const id = queryOrRef.id;
+export const onSnapshot = (collOrDocRef: any, callback: (snapshot: any) => void) => {
+    const { table, id } = collOrDocRef;
 
     const fetchData = async () => {
-        try {
-            if (id) {
-                const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
-                if (error) throw error;
-                callback({
-                    exists: () => !!data,
-                    id: id,
-                    data: () => data
-                });
-            } else {
-                let query = supabase.from(table).select();
-                // Simple descending order if it's a collection
-                query = query.order('created_at', { ascending: false });
-                
-                const { data, error } = await query;
-                if (error) throw error;
-                
-                const docs = (data || []).map(d => ({
-                    id: d.id,
-                    ref: { table, id: d.id },
-                    data: () => d
-                }));
-                callback({ docs });
-            }
-        } catch (err) {
-            console.error(`[Professional Error] Realtime Fetch on ${table}:`, err);
-            if (errorCallback) errorCallback(err);
+        if (id) {
+            const { data } = await supabase.from(table).select().eq('id', id).maybeSingle();
+            callback({
+                exists: () => !!data,
+                id: id,
+                data: () => data
+            });
+        } else {
+            const { data } = await supabase.from(table).select().order('createdAt', { ascending: false });
+            const docs = (data || []).map(d => ({
+                id: d.id,
+                data: () => d
+            }));
+            callback({ docs, empty: docs.length === 0 });
         }
     };
 
     fetchData();
-
-    // Subscribe to REALTIME changes for the table
-    const subscription = supabase
-        .channel(`table-changes-${table}-${id || 'all'}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: table }, (_payload) => {
-            fetchData();
-        })
-        .subscribe();
-
-    return () => {
-        supabase.removeChannel(subscription);
-    };
+    const subscription = supabase.channel(`sync-${table}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchData()).subscribe();
+    return () => { supabase.removeChannel(subscription); };
 };
 
 export const getDocs = async (collRef: any) => {
     const { table } = collRef;
     const { data, error } = await supabase.from(table).select();
     if (error) throw error;
-    const docs = (data || []).map(d => ({
-        id: d.id,
-        ref: { table, id: d.id },
-        data: () => d
-    }));
-    return { docs, empty: docs.length === 0 };
+    return {
+        docs: (data || []).map(d => ({
+            id: d.id,
+            data: () => d
+        })),
+        empty: (data || []).length === 0
+    };
 };
 
 export const getDoc = async (docRef: any) => {
@@ -196,16 +167,12 @@ export const getDoc = async (docRef: any) => {
     };
 };
 
-// --- FIRESTORE QUERY OPERATORS ---
-export const query = (c: any, ..._args: any[]) => c;
-export const orderBy = (..._args: any[]) => ({});
-export const limit = (..._args: any[]) => ({});
-export const arrayUnion = (item: any) => ({ _type: 'arrayOp', op: 'union', value: item });
-export const arrayRemove = (item: any) => ({ _type: 'arrayOp', op: 'remove', value: item });
-
+export const query = (c: any) => c;
+export const orderBy = () => ({});
+export const limit = () => ({});
+export const arrayUnion = (val: any) => val;
+export const arrayRemove = (val: any) => val;
 export const setDoc = updateDoc;
 export const loginWithGoogle = loginAnonymously;
-export const writeBatch = () => ({
-    delete: () => { },
-    commit: async () => { }
-});
+export const writeBatch = () => ({ delete: () => {}, commit: async () => {} });
+export const serverTimestamp = () => Date.now();

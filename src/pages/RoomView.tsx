@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db, doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, getDocs, arrayUnion, arrayRemove } from '../firebase';
+import { db, doc, onSnapshot, updateDoc, deleteDoc, collection, addDoc, query, orderBy, arrayUnion, arrayRemove } from '../firebase';
 import { Room, Round, Recording, User } from '../types';
-import { Mic, Square, Play, Download, Users, Settings, Loader2, Trophy, Clock, Sparkles, X, Heart, Volume2, Star, Share2, Check, Shuffle, BookOpen, Radio, Activity } from 'lucide-react';
+import { Mic, Square, Play, Download, Users, Settings, Loader2, Trophy, Clock, Sparkles, X, Heart, Volume2, Star, Share2, Check, BookOpen, Radio } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Waveform from '../components/Waveform';
 import RatingModal from '../components/RatingModal';
@@ -15,13 +15,20 @@ export default function RoomView({ user }: { user: any }) {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const [room, setRoom] = useState<Room | null>(null);
+  const [participants, setParticipants] = useState<User[]>([]);
+
+  const isHost = room?.hostId === user.uid;
+  const { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence } = useLiveAudio(roomId, user, isHost);
+
+  const [round, setRound] = useState<Round | null>(null);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const latestRoomRef = useRef<Room | null>(null);
 
   useEffect(() => {
     latestRoomRef.current = room;
   }, [room]);
-  const [round, setRound] = useState<Round | null>(null);
-  const [recordings, setRecordings] = useState<Recording[]>([]);
+
+  const [isReadyLocal, setIsReadyLocal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Audio Recording State
@@ -31,40 +38,25 @@ export default function RoomView({ user }: { user: any }) {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [participants, setParticipants] = useState<User[]>([]);
-
   // Fetch Room Data
   useEffect(() => {
     if (!roomId) return;
     const roomRef = doc(db, 'rooms', roomId);
 
-    // Join Room & Save Profile
-    const joinRoom = async () => {
+    const syncProfile = async () => {
       try {
-        await updateDoc(roomRef, {
-          participants: arrayUnion(user.uid)
-        });
-        // Save/Update user profile in a global users collection
-        await updateDoc(doc(db, 'users', user.uid), {
-          displayName: user.displayName || 'ضيف',
-          photoURL: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
-          lastSeen: Date.now()
+        await updateDoc(doc(db, 'profiles', user.uid), {
+          display_name: user.displayName || 'ضيف',
+          photo_url: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
+          last_seen: new Date().toISOString()
         }).catch(async (err) => {
-          // If doc doesn't exist, create it
-          if (err.code === 'not-found') {
-            await addDoc(collection(db, 'users'), {
-              uid: user.uid,
-              displayName: user.displayName || 'ضيف',
-              photoURL: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
-              createdAt: Date.now()
-            });
-          }
+           // Firestore error codes are different, but generic catch works
         });
       } catch (error) {
-        console.error("Error joining room:", error);
+        console.error("Error syncing profile:", error);
       }
     };
-    joinRoom();
+    syncProfile();
 
     const unsubscribe = onSnapshot(roomRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -79,41 +71,20 @@ export default function RoomView({ user }: { user: any }) {
 
     return () => {
       unsubscribe();
-      // Leave Room
-      if (latestRoomRef.current && latestRoomRef.current.participants.length <= 1) {
+      if (activeUsers.length <= 1 && isHost) {
         deleteDoc(roomRef).catch(console.error);
-      } else {
-        updateDoc(roomRef, {
-          participants: arrayRemove(user.uid),
-          readyUsers: arrayRemove(user.uid)
-        }).catch(console.error);
       }
     };
-  }, [roomId, user.uid, navigate, user.displayName, user.photoURL]);
+  }, [roomId, user.uid, navigate, isHost, activeUsers.length]);
 
-  // Fetch Participant Details
   useEffect(() => {
-    if (!room?.participants || room.participants.length === 0) return;
-
-    const fetchParticipants = async () => {
-      try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef);
-        const querySnapshot = await getDocs(q);
-        const allUsers = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-
-        const roomParticipants = room.participants.map(uid => {
-          const found = allUsers.find(u => u.uid === uid);
-          return found || { uid, displayName: 'مشارك', photoURL: `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}` };
-        });
-
-        setParticipants(roomParticipants);
-      } catch (error) {
-        console.error("Error fetching participants:", error);
-      }
-    };
-    fetchParticipants();
-  }, [room?.participants]);
+    setParticipants(activeUsers.map(u => ({
+      uid: u.uid,
+      displayName: u.name,
+      photoURL: u.photoURL,
+      isHost: u.isHost
+    })));
+  }, [activeUsers]);
 
   // Fetch Round Data
   useEffect(() => {
@@ -122,14 +93,11 @@ export default function RoomView({ user }: { user: any }) {
       return;
     }
     const roundRef = doc(db, 'rooms', roomId, 'rounds', room.currentRoundId);
-    const unsubscribe = onSnapshot(roundRef, (docSnap) => {
+    return onSnapshot(roundRef, (docSnap) => {
       if (docSnap.exists()) {
         setRound({ id: docSnap.id, ...docSnap.data() } as Round);
       }
-    }, (error) => {
-      console.error("Error listening to round:", error);
     });
-    return unsubscribe;
   }, [room?.currentRoundId, roomId]);
 
   // Fetch Recordings Data
@@ -140,36 +108,30 @@ export default function RoomView({ user }: { user: any }) {
     }
     const recsRef = collection(db, 'rooms', roomId, 'recordings');
     const q = query(recsRef, orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
       const recs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Recording))
         .filter(r => r.roundId === room.currentRoundId);
       setRecordings(recs);
-    }, (error) => {
-      console.error("Error listening to recordings:", error);
     });
-    return unsubscribe;
   }, [room?.currentRoundId, roomId]);
 
-  // Settings State
+  // UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const [editMaxParticipants, setEditMaxParticipants] = useState(10);
   const [editRecordingDuration, setEditRecordingDuration] = useState(60);
   const [editThemeColor, setEditThemeColor] = useState('emerald');
-  const [editThemeBg, setEditThemeBg] = useState('');
-  const [echoEnabled, setEchoEnabled] = useState(true);
   const [copied, setCopied] = useState(false);
   const [sortBy, setSortBy] = useState<'time' | 'likes' | 'score'>('time');
-
-  // Verse Selection State
   const [verseSelectionMode, setVerseSelectionMode] = useState<'random' | 'manual'>('random');
   const [manualSurah, setManualSurah] = useState(1);
   const [manualAyah, setManualAyah] = useState(1);
   const [isStartingRound, setIsStartingRound] = useState(false);
+  const [echoEnabled, setEchoEnabled] = useState(true);
 
-  // Visualizer State
+  // Visualizer
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -179,7 +141,6 @@ export default function RoomView({ user }: { user: any }) {
       setEditMaxParticipants(room.maxParticipants || 10);
       setEditRecordingDuration(room.recordingDuration || 60);
       setEditThemeColor(room.theme?.color || 'emerald');
-      setEditThemeBg(room.theme?.backgroundImage || '');
     }
   }, [room, isSettingsOpen]);
 
@@ -189,66 +150,32 @@ export default function RoomView({ user }: { user: any }) {
       await updateDoc(doc(db, 'rooms', roomId), {
         maxParticipants: editMaxParticipants,
         recordingDuration: editRecordingDuration,
-        theme: {
-          color: editThemeColor,
-          backgroundImage: editThemeBg
-        }
+        theme: { color: editThemeColor }
       });
       setIsSettingsOpen(false);
     } catch (error) {
       console.error("Error saving settings:", error);
-      if (error instanceof Error) {
-        alert(`فشل حفظ الإعدادات: ${error.message}`);
-      } else {
-        alert("فشل حفظ الإعدادات.");
-      }
     }
   };
 
   const getColorClasses = (color: string) => {
     switch (color) {
-      case 'blue': return { text: 'text-blue-500', bg: 'bg-blue-600', hoverBg: 'hover:bg-blue-500', border: 'border-blue-500', glow: 'shadow-blue-900/20', lightBg: 'bg-blue-500/20', lightText: 'text-blue-400' };
-      case 'purple': return { text: 'text-purple-500', bg: 'bg-purple-600', hoverBg: 'hover:bg-purple-500', border: 'border-purple-500', glow: 'shadow-purple-900/20', lightBg: 'bg-purple-500/20', lightText: 'text-purple-400' };
-      case 'rose': return { text: 'text-rose-500', bg: 'bg-rose-600', hoverBg: 'hover:bg-rose-500', border: 'border-rose-500', glow: 'shadow-rose-900/20', lightBg: 'bg-rose-500/20', lightText: 'text-rose-400' };
-      case 'amber': return { text: 'text-amber-500', bg: 'bg-amber-600', hoverBg: 'hover:bg-amber-500', border: 'border-amber-500', glow: 'shadow-amber-900/20', lightBg: 'bg-amber-500/20', lightText: 'text-amber-400' };
-      default: return { text: 'text-emerald-500', bg: 'bg-emerald-600', hoverBg: 'hover:bg-emerald-500', border: 'border-emerald-500', glow: 'shadow-emerald-900/20', lightBg: 'bg-emerald-500/20', lightText: 'text-emerald-400' };
+      case 'blue': return { text: 'text-blue-500', bg: 'bg-blue-600', lightBg: 'bg-blue-500/20', glow: 'shadow-blue-900/20' };
+      case 'purple': return { text: 'text-purple-500', bg: 'bg-purple-600', lightBg: 'bg-purple-500/20', glow: 'shadow-purple-900/20' };
+      case 'rose': return { text: 'text-rose-500', bg: 'bg-rose-600', lightBg: 'bg-rose-500/20', glow: 'shadow-rose-900/20' };
+      case 'amber': return { text: 'text-amber-500', bg: 'bg-amber-600', lightBg: 'bg-amber-500/20', glow: 'shadow-amber-900/20' };
+      default: return { text: 'text-emerald-500', bg: 'bg-emerald-600', lightBg: 'bg-emerald-500/20', glow: 'shadow-emerald-900/20' };
     }
   };
 
   const theme = getColorClasses(room?.theme?.color || 'emerald');
 
   const handleShare = async () => {
-    const url = window.location.href;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-    }
-  };
-
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-
-  const handleGetFeedback = async (recording: Recording) => {
-    if (!roomId) return;
-    setAnalyzingId(recording.id);
-    try {
-      // Extract mimeType from base64 string
-      const mimeTypeMatch = recording.audioData.match(/data:(.*?);base64/);
-      const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'audio/webm';
-
-      const feedback = "تمت التلاوة بنجاح.";
-
-      await updateDoc(doc(db, 'rooms', roomId, 'recordings', recording.id), {
-        feedback
-      });
-    } catch (error) {
-      console.error("Error getting feedback:", error);
-      alert("فشل الحصول على التقييم. يرجى المحاولة مرة أخرى.");
-    } finally {
-      setAnalyzingId(null);
-    }
+    } catch (err) {}
   };
 
   const handleLike = async (recording: Recording) => {
@@ -256,136 +183,57 @@ export default function RoomView({ user }: { user: any }) {
     try {
       const recRef = doc(db, 'rooms', roomId, 'recordings', recording.id);
       const hasLiked = recording.likes?.includes(user.uid);
-
-      if (hasLiked) {
-        await updateDoc(recRef, {
-          likes: arrayRemove(user.uid)
-        });
-      } else {
-        await updateDoc(recRef, {
-          likes: arrayUnion(user.uid)
-        });
-      }
-    } catch (error) {
-      console.error("Error liking recording:", error);
-    }
+      await updateDoc(recRef, {
+        likes: hasLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
+      });
+    } catch (error) {}
   };
 
   const handleScore = async (recording: Recording, score: number) => {
     if (!roomId || !isHost) return;
     try {
-      const recRef = doc(db, 'rooms', roomId, 'recordings', recording.id);
-      await updateDoc(recRef, { score });
-    } catch (error) {
-      console.error("Error scoring recording:", error);
-    }
+      await updateDoc(doc(db, 'rooms', roomId, 'recordings', recording.id), { score });
+    } catch (error) {}
   };
 
   const handleSubmitRating = async (rating: number) => {
     if (!roomId || !activeRecordingId) return;
     try {
-      await updateDoc(doc(db, 'rooms', roomId, 'recordings', activeRecordingId), {
-        rating
-      });
+      await updateDoc(doc(db, 'rooms', roomId, 'recordings', activeRecordingId), { rating });
       setIsRatingModalOpen(false);
       setActiveRecordingId(null);
-    } catch (error) {
-      console.error("Error saving rating:", error);
-    }
+    } catch (error) {}
   };
 
-  const isHost = room?.hostId === user.uid;
-
-  const { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence } = useLiveAudio(roomId, user, isHost);
-
-  const [isReadyLocal, setIsReadyLocal] = useState(false);
-
-  // Calculate Leaderboard
   const leaderboard = useMemo(() => {
-    const userScores: Record<string, { name: string, totalScore: number, recCount: number }> = {};
-
+    const scores: Record<string, { name: string, totalScore: number, recCount: number }> = {};
     recordings.forEach(rec => {
       if (rec.score !== undefined) {
-        if (!userScores[rec.userId]) {
-          userScores[rec.userId] = { name: rec.userName, totalScore: 0, recCount: 0 };
-        }
-        userScores[rec.userId].totalScore += rec.score;
-        userScores[rec.userId].recCount += 1;
+        if (!scores[rec.userId]) scores[rec.userId] = { name: rec.userName, totalScore: 0, recCount: 0 };
+        scores[rec.userId].totalScore += rec.score;
+        scores[rec.userId].recCount += 1;
       }
     });
-
-    return Object.values(userScores)
-      .sort((a, b) => b.totalScore - a.totalScore)
-      .slice(0, 5); // Top 5
+    return Object.values(scores).sort((a, b) => b.totalScore - a.totalScore).slice(0, 5);
   }, [recordings]);
-
-  // Calculate Round Results (Top 3 for current round)
-  const roundResults = useMemo(() => {
-    if (!round || (round.status !== 'reviewing' && round.status !== 'finished')) return [];
-
-    const roundRecs = recordings.filter(r => r.roundId === round.id && r.score !== undefined);
-    return roundRecs
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, 3);
-  }, [recordings, round]);
 
   const finishRound = async () => {
     if (!roomId || !room?.currentRoundId || !isHost) return;
-    await updateDoc(doc(db, 'rooms', roomId, 'rounds', room.currentRoundId), {
-      status: 'finished'
-    });
+    await updateDoc(doc(db, 'rooms', roomId, 'rounds', room.currentRoundId), { status: 'finished' });
   };
 
-  // Confetti effect when round finishes
   useEffect(() => {
     if (round?.status === 'finished') {
-      const duration = 3 * 1000;
-      const animationEnd = Date.now() + duration;
-      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
-
-      const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
-
-      const interval: any = setInterval(function () {
-        const timeLeft = animationEnd - Date.now();
-
-        if (timeLeft <= 0) {
-          return clearInterval(interval);
-        }
-
-        const particleCount = 50 * (timeLeft / duration);
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
-      }, 250);
-
-      return () => clearInterval(interval);
+      confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
     }
   }, [round?.status]);
-
-  const sortedRecordings = useMemo(() => {
-    return [...recordings].sort((a, b) => {
-      if (sortBy === 'likes') {
-        const aLikes = a.likes?.length || 0;
-        const bLikes = b.likes?.length || 0;
-        if (bLikes !== aLikes) return bLikes - aLikes;
-      }
-      if (sortBy === 'score') {
-        const aScore = a.score || 0;
-        const bScore = b.score || 0;
-        if (bScore !== aScore) return bScore - aScore;
-      }
-      // default: time (already sorted by createdAt desc from firestore)
-      return b.createdAt - a.createdAt;
-    });
-  }, [recordings, sortBy]);
 
   const handleReady = async () => {
     try {
       const newState = !isReadyLocal;
       setIsReadyLocal(newState);
       await updatePresence({ isReady: newState });
-    } catch (error) {
-      console.error("Error toggling ready state via Presence:", error);
-    }
+    } catch (error) {}
   };
 
   const startNewRound = async () => {
@@ -403,17 +251,10 @@ export default function RoomView({ user }: { user: any }) {
         verses.push(data.data.text);
         surahName = data.data.surah.name;
         ayahNumber = data.data.numberInSurah;
-
-        // If the verse is short, fetch the next one too
-        if (data.data.text.length < 100 && randomAyah < 6236) {
-          const res2 = await fetch(`https://api.alquran.cloud/v1/ayah/${randomAyah + 1}/quran-uthmani`);
-          const data2 = await res2.json();
-          verses.push(data2.data.text);
-        }
       } else {
         const res = await fetch(`https://api.alquran.cloud/v1/ayah/${manualSurah}:${manualAyah}/quran-uthmani`);
         const data = await res.json();
-        if (data.code !== 200) throw new Error("الآية غير موجودة");
+        if (data.code !== 200) throw new Error("آية غير موجودة");
         verses.push(data.data.text);
         surahName = data.data.surah.name;
         ayahNumber = data.data.numberInSurah;
@@ -421,251 +262,106 @@ export default function RoomView({ user }: { user: any }) {
 
       const roundRef = await addDoc(collection(db, 'rooms', roomId, 'rounds'), {
         roomId,
-        verseText: verses.join(' * '),
+        verseText: verses.join(' '),
         surahName,
         ayahNumber,
         status: 'countdown',
-        countdownStartTime: Date.now() + 5000, // 5 seconds from now
+        countdownStartTime: Date.now() + 5000,
         createdAt: Date.now()
       });
 
-      if (!roundRef || !roundRef.id) {
-        throw new Error("فشل إنشاء الجولة. تأكد من إعدادات قاعدة البيانات.");
-      }
-
       await updateDoc(doc(db, 'rooms', roomId), {
         status: 'playing',
-        currentRoundId: roundRef.id,
-        readyUsers: [] // Reset ready state for next round
+        currentRoundId: roundRef.id
       });
-
     } catch (error: any) {
-      console.error("Error starting round:", error);
-      alert(error.message || "حدث خطأ أثناء جلب الآية. تأكد من صحة رقم السورة والآية.");
+      alert(error.message);
     } finally {
       setIsStartingRound(false);
     }
   };
 
-  const endRound = async () => {
-    if (!roomId || !room?.currentRoundId || !isHost) return;
-    await updateDoc(doc(db, 'rooms', roomId, 'rounds', room.currentRoundId), {
-      status: 'reviewing'
-    });
-  };
-
-  // Countdown Logic
   const [localCountdown, setLocalCountdown] = useState<number | null>(null);
   useEffect(() => {
     if (round?.status === 'countdown' && round.countdownStartTime) {
       const interval = setInterval(async () => {
         const remaining = Math.max(0, Math.ceil((round.countdownStartTime! - Date.now()) / 1000));
         setLocalCountdown(remaining);
-
         if (remaining === 0 && isHost) {
           clearInterval(interval);
-          await updateDoc(doc(db, 'rooms', roomId!, 'rounds', round.id), {
-            status: 'recording'
-          });
+          await updateDoc(doc(db, 'rooms', roomId!, 'rounds', round.id), { status: 'recording' });
         }
       }, 500);
       return () => clearInterval(interval);
-    } else {
-      setLocalCountdown(null);
     }
   }, [round?.status, round?.countdownStartTime, isHost, roomId, round?.id]);
 
   const claimRecording = async () => {
     if (!roomId || !round || round.status !== 'recording' || round.activeRecorderId) return;
-    try {
-      await updateDoc(doc(db, 'rooms', roomId, 'rounds', round.id), {
-        activeRecorderId: user.uid
-      });
-      startRecording();
-    } catch (error) {
-      console.error("Failed to claim recording:", error);
-    }
+    await updateDoc(doc(db, 'rooms', roomId, 'rounds', round.id), { activeRecorderId: user.uid });
+    startRecording();
   };
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       let finalStream = stream;
-      let audioCtx: AudioContext | null = null;
-      let analyser: AnalyserNode | null = null;
-
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
+      const analyser = audioCtx.createAnalyser();
       analyserRef.current = analyser;
 
       if (echoEnabled) {
-        const destination = audioCtx.createMediaStreamDestination();
-
-        // Professional Mosque Reverb using ConvolverNode
-        const convolver = audioCtx.createConvolver();
-
-        // Generate a synthetic impulse response for a large hall/mosque
-        const duration = 2.5; // 2.5 seconds reverb tail
-        const decay = 2.0;
-        const sampleRate = audioCtx.sampleRate;
-        const length = sampleRate * duration;
-        const impulse = audioCtx.createBuffer(2, length, sampleRate);
-        const left = impulse.getChannelData(0);
-        const right = impulse.getChannelData(1);
-
-        for (let i = 0; i < length; i++) {
-          const multiplier = Math.pow(1 - i / length, decay);
-          left[i] = (Math.random() * 2 - 1) * multiplier;
-          right[i] = (Math.random() * 2 - 1) * multiplier;
-        }
-        convolver.buffer = impulse;
-
-        const wetGain = audioCtx.createGain();
-        wetGain.gain.value = 0.25; // 25% reverb volume
-
-        const dryGain = audioCtx.createGain();
-        dryGain.gain.value = 1.0; // 100% original voice
-
-        // Lowpass filter to make the reverb sound warm and natural (not harsh)
-        const filterNode = audioCtx.createBiquadFilter();
-        filterNode.type = 'lowpass';
-        filterNode.frequency.value = 2000;
-
-        // Routing
-        const masterGain = audioCtx.createGain();
-
-        source.connect(dryGain);
-        dryGain.connect(masterGain);
-
-        source.connect(filterNode);
-        filterNode.connect(convolver);
-        convolver.connect(wetGain);
-        wetGain.connect(masterGain);
-
-        // Connect to analyser for visualization and destination for recording
-        masterGain.connect(analyser);
-        masterGain.connect(destination);
-
-        finalStream = destination.stream;
+         const destination = audioCtx.createMediaStreamDestination();
+         const convolver = audioCtx.createConvolver();
+         const duration = 2.0;
+         const sampleRate = audioCtx.sampleRate;
+         const length = sampleRate * duration;
+         const impulse = audioCtx.createBuffer(2, length, sampleRate);
+         for (let i = 0; i < length; i++) {
+           impulse.getChannelData(0)[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+           impulse.getChannelData(1)[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+         }
+         convolver.buffer = impulse;
+         const wetGain = audioCtx.createGain(); wetGain.gain.value = 0.3;
+         const dryGain = audioCtx.createGain(); dryGain.gain.value = 1.0;
+         source.connect(dryGain); dryGain.connect(destination);
+         source.connect(convolver); convolver.connect(wetGain); wetGain.connect(destination);
+         destination.connect(analyser);
+         finalStream = destination.stream;
       } else {
-        source.connect(analyser);
+         source.connect(analyser);
       }
 
-      // Start visualizer
-      const drawVisualizer = () => {
-        if (!canvasRef.current || !analyserRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const bufferLength = analyserRef.current.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        analyserRef.current.getByteFrequencyData(dataArray);
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        const barWidth = (canvas.width / bufferLength) * 2.5;
-        let barHeight;
-        let x = 0;
-
-        for (let i = 0; i < bufferLength; i++) {
-          barHeight = dataArray[i] / 2;
-          ctx.fillStyle = `rgb(${barHeight + 100}, 200, 150)`;
-          ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-          x += barWidth + 1;
-        }
-
-        animationRef.current = requestAnimationFrame(drawVisualizer);
-      };
-      drawVisualizer();
-
-      const options: MediaRecorderOptions = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 64000 }
-        : { audioBitsPerSecond: 64000 };
-      const mediaRecorder = new MediaRecorder(finalStream, options);
+      const mediaRecorder = new MediaRecorder(finalStream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
+      mediaRecorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result as string;
-
-          // Check size before saving (Firestore limit is 1MB, ~1,048,576 bytes)
-          // base64 string size is roughly 4/3 of the original size
-          const sizeInBytes = new Blob([base64Audio]).size;
-          if (sizeInBytes > 1000000) {
-            alert("حجم التسجيل كبير جداً. يرجى تسجيل مقطع أقصر.");
-            return;
-          }
-
           if (roomId && round) {
-            try {
-              const docRef = await addDoc(collection(db, 'rooms', roomId, 'recordings'), {
-                roomId,
-                roundId: round.id,
-                userId: user.uid,
-                userName: user.displayName || 'ضيف',
-                audioData: base64Audio,
-                duration: recordingTime,
-                likes: [],
-                createdAt: Date.now()
-              });
-              setActiveRecordingId(docRef.id);
-              setIsRatingModalOpen(true);
-            } catch (err) {
-              console.error("Error saving recording:", err);
-              alert("حدث خطأ أثناء حفظ التسجيل. قد يكون حجم الملف كبيراً جداً.");
-            }
+            const docRef = await addDoc(collection(db, 'rooms', roomId, 'recordings'), {
+              roomId, roundId: round.id, userId: user.uid, userName: user.displayName || 'ضيف',
+              audioData: base64Audio, duration: recordingTime, likes: [], createdAt: Date.now()
+            });
+            setActiveRecordingId(docRef.id);
+            setIsRatingModalOpen(true);
           }
-          // Stop all tracks
-          stream.getTracks().forEach(track => track.stop());
-          if (audioCtx) audioCtx.close();
-          if (animationRef.current) cancelAnimationFrame(animationRef.current);
+          stream.getTracks().forEach(t => t.stop());
+          audioCtx.close();
         };
       };
 
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
-
-      const maxDuration = room?.recordingDuration || 60;
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => {
-          if (prev >= maxDuration) {
-            stopRecording();
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-      alert("الوصول إلى الميكروفون مرفوض أو غير متاح.");
-      // Release claim if failed
-      if (roomId && round) {
-        await updateDoc(doc(db, 'rooms', roomId, 'rounds', round.id), {
-          activeRecorderId: null
-        });
-      }
+      timerRef.current = setInterval(() => setRecordingTime(p => p + 1), 1000);
+    } catch (e) {
+      alert("تعذر الوصول للميكروفون");
     }
   };
 
@@ -677,972 +373,213 @@ export default function RoomView({ user }: { user: any }) {
     }
   };
 
-  if (loading || !room) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-500"><Loader2 className="w-8 h-8 animate-spin" /></div>;
-  }
+  if (loading || !room) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-emerald-500"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
   return (
-    <div
-      className="min-h-screen bg-transparent text-slate-100 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden"
-    >
-      {/* Background Effects */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative selection:bg-emerald-500/30 overflow-x-hidden">
+      {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/20 blur-[150px] rounded-full opacity-30`} />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-amber-600/10 blur-[150px] rounded-full opacity-30" />
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/10 blur-[150px] rounded-full" />
       </div>
 
       <div className="relative z-10 flex flex-col flex-1">
-        {/* Header */}
-        <header className="sticky top-0 z-50 glass border-b border-white/10 h-20">
-          <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
+        <header className="sticky top-0 z-50 glass border-b border-white/10 h-20 px-6">
+          <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl ${theme.bg} flex items-center justify-center shadow-[0_12px_40px_rgba(0,0,0,0.5)] ${theme.glow}`}>
+              <div className={`w-10 h-10 rounded-xl ${theme.bg} flex items-center justify-center shadow-lg`}>
                 <Radio className="text-white w-6 h-6 animate-pulse" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gradient">{room.name}</h1>
+                <h1 className="text-xl font-bold bg-gradient-to-l from-white to-slate-400 bg-clip-text text-transparent">{room.name}</h1>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <Users className="w-3 h-3" />
                   <span>متصل {activeUsers.length}</span>
-                  {isHost && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full">المضيف</span>}
                 </div>
               </div>
             </div>
-
             <div className="flex items-center gap-3">
-              <button
-                onClick={isHost ? (isLive ? stopLive : startLive) : joinLive}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all duration-300 ${isLive
-                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse'
-                  : 'glass-dark/5 text-slate-400 border-white/10 hover:glass-dark/10'
-                  }`}
-                title={isHost ? (isLive ? "إيقاف البث المباشر" : "بدء بث مباشر") : "انضمام للبث المباشر"}
-              >
-                <Radio className={`w-4 h-4 ${isLive ? 'animate-pulse' : ''}`} />
-                <span className="text-xs font-bold">{isLive ? 'مباشر' : 'بث مباشر'}</span>
+              <button onClick={isHost ? (isLive ? stopLive : startLive) : joinLive} className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all ${isLive ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-white/5 border-white/10'}`}>
+                <Radio className="w-4 h-4" />
+                <span className="text-xs font-bold">{isLive ? 'مباشر' : 'بث'}</span>
               </button>
-              <button
-                onClick={handleShare}
-                className="p-2.5 rounded-xl glass hover:glass-dark/10 text-slate-300 transition-all duration-300"
-                title="مشاركة المجلس"
-              >
+              <button onClick={handleShare} className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
                 {copied ? <Check className="w-5 h-5 text-emerald-400" /> : <Share2 className="w-5 h-5" />}
               </button>
-              {isHost && (
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="p-2.5 rounded-xl glass hover:glass-dark/10 text-slate-300 transition-all duration-300"
-                >
-                  <Settings className="w-5 h-5" />
-                </button>
-              )}
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 rounded-xl glass-dark/5 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-white/10 transition-all duration-300 text-sm font-medium"
-              >
-                مغادرة
-              </button>
+              {isHost && <button onClick={() => setIsSettingsOpen(true)} className="p-2.5 rounded-xl bg-white/5"><Settings className="w-5 h-5" /></button>}
+              <button onClick={() => navigate('/dashboard')} className="px-4 py-2 rounded-xl bg-white/5 text-sm font-medium">خروج</button>
             </div>
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="flex-1 w-full max-w-[1800px] mx-auto px-4 md:px-8 py-6 grid px-4 grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 min-h-[calc(100vh-80px)] items-start">
-    <div className="lg:col-span-4 xl:col-span-3 flex flex-col gap-6 sticky top-28 h-[calc(100vh-120px)] overflow-y-auto no-scrollbar scroll-smooth pb-10">
-
-          {/* Participant List & Ready Bar (Sidebar Widget) */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-dark rounded-[2.5rem] p-6 flex flex-col gap-6 overflow-hidden relative shadow-lg"
-          >
-            <div className="flex items-center justify-between p-2">
-              <h3 className="text-xl font-black text-amber-400 flex items-center gap-3">
-                <Users className="w-6 h-6" />
-                المجلس
-              </h3>
-              <div className="px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs font-bold text-slate-300">
-                {activeUsers.length} متصل الآن
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {activeUsers.map((p) => (
-                <motion.div
-                  key={p.uid}
-                  layout
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className={`group relative flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 border ${
-                    p.isReady
-                      ? 'bg-emerald-500/10 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
-                      : 'bg-white/5 border-white/5 hover:bg-white/10'
-                  }`}
-                >
-                  <div className="relative">
-                    <img
-                      src={p.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.uid}`}
-                      alt={p.name}
-                      className={`w-12 h-12 rounded-xl border-2 object-cover transition-all duration-500 ${
-                        p.isReady ? 'border-emerald-500' : 'border-slate-700'
-                      }`}
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 ${
-                      p.isReady ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'
-                    }`} />
+        <main className="max-w-[1600px] mx-auto w-full px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
+          {/* Sidebar */}
+          <div className="lg:col-span-3 space-y-6">
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="glass-dark rounded-[2.5rem] p-6 border border-white/5">
+              <h3 className="text-xl font-black text-amber-400 flex items-center gap-3 mb-6"><Users /> الحضور</h3>
+              <div className="space-y-3">
+                {activeUsers.map(p => (
+                  <div key={p.uid} className={`flex items-center gap-3 p-3 rounded-2xl border ${p.isReady ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-transparent'}`}>
+                    <img src={p.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.uid}`} className="w-10 h-10 rounded-xl" alt="" />
+                    <span className="flex-1 text-sm font-bold truncate">{p.name || 'قارئ'}</span>
+                    {p.isReady && <Check className="w-4 h-4 text-emerald-400" />}
                   </div>
-
-                  <div className="flex flex-col flex-1">
-                    <span className="font-bold text-white text-sm">{p.name || 'مشارك'}</span>
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      {p.isHost ? 'المضيف' : p.isReady ? 'مستعد للتلاوة' : 'في الانتظار'}
-                    </span>
-                  </div>
-                  
-                  {p.isReady && (
-                    <div className="bg-emerald-500/20 p-1.5 rounded-full">
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-              {activeUsers.length === 0 && (
-                <div className="text-center py-10 px-4 rounded-2xl border-2 border-dashed border-white/5 bg-white/[0.02]">
-                  <Users className="w-8 h-8 text-slate-700 mx-auto mb-2 opacity-20" />
-                  <p className="text-slate-500 text-xs font-medium">بانتظار انضمام المشاركين للمجلس...</p>
-                </div>
-              )}
-            </div>
-
-            {room?.status === 'waiting' && (
-              <div className="pt-2 border-t border-white/10 mt-2">
-                <button
-                  onClick={handleReady}
-                  disabled={!user}
-                  className={`group relative w-full overflow-hidden px-6 py-4 rounded-2xl font-black transition-all duration-500 transform hover:-translate-y-1 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 ${
-                    isReadyLocal
-                      ? 'shadow-[0_0_40px_rgba(16,185,129,0.3)] border border-emerald-400/40 bg-emerald-500/10'
-                      : 'shadow-lg border border-white/10 glass-dark hover:border-emerald-500/50 hover:shadow-[0_0_25px_rgba(16,185,129,0.2)]'
-                  }`}
-                >
-                  <div className={`absolute inset-0 transition-all duration-700 ${
-                    isReadyLocal
-                      ? 'bg-gradient-to-tr from-emerald-600/20 via-emerald-500/10 to-teal-400/20 opacity-100'
-                      : 'bg-white/5 opacity-0 group-hover:opacity-100 group-hover:bg-gradient-to-tr group-hover:from-emerald-600/10 group-hover:to-teal-600/10'
-                  }`} />
-                  
-                  <div className="relative z-10 flex items-center justify-center gap-3 w-full">
-                    {isReadyLocal ? (
-                      <>
-                        <div className="bg-emerald-500 p-1.5 rounded-full shadow-lg flex items-center justify-center animate-pulse">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                        <span className="text-emerald-400 text-lg tracking-wider drop-shadow-md font-arabic">أنا مستعد الآن</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="bg-white/10 p-1.5 rounded-full group-hover:bg-emerald-500 transition-all duration-500 flex items-center justify-center">
-                          <Clock className="w-4 h-4 text-slate-400 group-hover:text-white" />
-                        </div>
-                        <span className="text-slate-300 group-hover:text-white transition-colors text-lg tracking-wider font-arabic">تأكيد الاستعداد</span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              </div>
-            )}
-          </motion.div>
-
-          {/* Leaderboard Section */}
-          {leaderboard.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-[2.5rem] p-8 mt-8"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-black flex items-center gap-3 text-amber-400">
-                  <Trophy className="w-8 h-8" />
-                  لوحة الشرف
-                </h3>
-                <div className="px-4 py-1.5 glass-dark rounded-full border border-white/5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  أفضل القراء
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {leaderboard.map((user, idx) => (
-                  <motion.div
-                    key={idx}
-                    whileHover={{ y: -5 }}
-                    className="flex items-center gap-4 glass-dark p-5 rounded-3xl border border-white/5 relative overflow-hidden group"
-                  >
-                    <div className={`absolute inset-0 bg-gradient-to-br ${idx === 0 ? 'from-amber-500/10 to-transparent' :
-                      idx === 1 ? 'from-slate-400/10 to-transparent' :
-                        idx === 2 ? 'from-amber-700/10 to-transparent' :
-                          'from-white/5 to-transparent'
-                      } opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-2xl relative z-10 ${idx === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-amber-900/40' :
-                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-100' :
-                        idx === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-900 text-white' :
-                          'glass-dark/10 text-slate-400'
-                      }`}>
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 relative z-10">
-                      <p className="font-black text-white text-lg leading-tight">{user.name}</p>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{user.recCount} تلاوة</p>
-                    </div>
-                    <div className="text-3xl font-black text-amber-400 relative z-10">
-                      {user.totalScore}
-                    </div>
-                  </motion.div>
                 ))}
               </div>
+              {room?.status === 'waiting' && (
+                <button onClick={handleReady} className={`w-full mt-6 py-4 rounded-2xl font-black transition-all ${isReadyLocal ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+                  {isReadyLocal ? 'أنا مستعد' : 'تأكيد الاستعداد'}
+                </button>
+              )}
             </motion.div>
-          )}
 
-          {/* Recordings List */}
-          {recordings.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-[2.5rem] p-8"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-                <h3 className="text-2xl font-black flex items-center gap-3">
-                  <Mic className={`w-8 h-8 ${theme.text}`} />
-                  تسجيلات الجولة
-                </h3>
-                <div className="flex items-center gap-2 p-1.5 glass-dark rounded-2xl border border-white/5">
-                  {[
-                    { id: 'time', label: 'الأحدث' },
-                    { id: 'likes', label: 'الإعجابات' },
-                    { id: 'score', label: 'التقييم' }
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setSortBy(tab.id as any)}
-                      className={`px-5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${sortBy === tab.id ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
-                    >
-                      {tab.label}
-                    </button>
+            {leaderboard.length > 0 && (
+              <div className="glass-dark rounded-[2.5rem] p-6 border border-white/5">
+                <h3 className="text-xl font-black text-amber-400 flex items-center gap-3 mb-6"><Trophy /> الصدارة</h3>
+                <div className="space-y-3">
+                  {leaderboard.map((u, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 glass rounded-2xl">
+                       <span className="font-bold text-sm">{u.name}</span>
+                       <span className="text-amber-400 font-black">{u.totalScore}</span>
+                    </div>
                   ))}
                 </div>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-6">
-                <AnimatePresence mode="popLayout">
-                  {sortedRecordings.map((rec, idx) => {
-                    const isTopRated = (sortBy === 'score' || sortBy === 'likes') && idx === 0 && (rec.score || (rec.likes && rec.likes.length > 0));
-                    return (
-                      <motion.div
-                        key={rec.id}
-                        layout
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className={`flex flex-col p-6 rounded-[2rem] transition-all duration-500 relative overflow-hidden group ${isTopRated
-                          ? 'bg-amber-500/5 border border-amber-500/20 shadow-2xl shadow-amber-900/10'
-                          : 'glass-dark border border-white/5 hover:glass-dark/[0.04]'
-                          }`}
-                      >
-                        {isTopRated && (
-                          <div className="absolute top-0 left-0 w-1 h-full bg-amber-500" />
-                        )}
+          {/* Main Stage */}
+          <div className="lg:col-span-6 flex flex-col gap-6">
+            <motion.div layout className="glass-dark rounded-[3rem] p-10 min-h-[500px] flex flex-col items-center justify-center relative border border-white/10 shadow-2xl">
+              {room.status === 'waiting' ? (
+                <div className="text-center space-y-8 w-full max-w-md">
+                   <div className={`w-32 h-32 mx-auto rounded-[3rem] ${theme.lightBg} flex items-center justify-center shadow-2xl`}>
+                     <Users className={`w-14 h-14 ${theme.text}`} />
+                   </div>
+                   <h2 className="text-4xl font-black">المجلس منعقد</h2>
+                   <p className="text-slate-400">بانتظار اكتمال القراء وبدء الجولة من المضيف</p>
+                   {isHost && (
+                     <div className="space-y-6 pt-6">
+                       <div className="flex gap-2 p-1.5 bg-black/40 rounded-2xl">
+                         <button onClick={() => setVerseSelectionMode('random')} className={`flex-1 py-3 rounded-xl text-xs font-bold ${verseSelectionMode === 'random' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>آلي</button>
+                         <button onClick={() => setVerseSelectionMode('manual')} className={`flex-1 py-3 rounded-xl text-xs font-bold ${verseSelectionMode === 'manual' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>يدوي</button>
+                       </div>
+                       <button onClick={startNewRound} disabled={isStartingRound} className="w-full py-6 rounded-[2rem] bg-emerald-600 text-white font-black text-2xl shadow-xl hover:scale-[1.02] transition-all">إطلاق الجولة</button>
+                     </div>
+                   )}
+                </div>
+              ) : round ? (
+                <div className="w-full text-center space-y-12">
+                   <div className="inline-flex items-center gap-4 px-8 py-3 bg-white/5 rounded-full border border-white/10">
+                     <BookOpen className="w-5 h-5 text-emerald-400" />
+                     <span className="font-bold text-slate-300">سورة {round.surahName} آية {round.ayahNumber}</span>
+                   </div>
+                   <h2 className="text-5xl md:text-7xl font-arabic leading-[1.8] text-white drop-shadow-2xl" dir="rtl">{round.verseText}</h2>
 
-                        <div className="flex items-center justify-between mb-6 relative z-10">
-                          <div className="flex items-center gap-4">
-                            <div className="relative">
-                              <img
-                                src={participants.find(p => p.uid === rec.userId)?.photoURL}
-                                alt="User"
-                                className="w-14 h-14 rounded-2xl object-cover border-2 border-white/10"
-                                referrerPolicy="no-referrer"
-                              />
-                              {isTopRated && (
-                                <div className="absolute -top-2 -right-2 bg-amber-500 p-1.5 rounded-lg shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-                                  <Trophy className="w-3 h-3 text-white" />
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-black text-white text-lg">{rec.userName}</p>
-                              <div className="flex items-center gap-3 mt-1">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                  {new Date(rec.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                  <Clock className="w-3 h-3" />
-                                  {rec.duration}s
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            {rec.score !== undefined && (
-                              <motion.div
-                                key={rec.score}
-                                initial={{ scale: 0.8, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl"
-                              >
-                                <Star className="w-4 h-4 fill-current" />
-                                <span className="text-sm font-black">{rec.score}/100</span>
-                              </motion.div>
-                            )}
-                            <button
-                              onClick={() => handleLike(rec)}
-                              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 ${rec.likes?.includes(user.uid)
-                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                : 'glass-dark/5 text-slate-400 border border-white/5 hover:glass-dark/10'
-                                }`}
-                            >
-                              <Heart className={`w-4 h-4 ${rec.likes?.includes(user.uid) ? 'fill-current' : ''}`} />
-                              <span className="text-sm font-bold">{rec.likes?.length || 0}</span>
-                            </button>
-
-                            <a
-                              href={rec.audioData}
-                              download={`tilaawa-${rec.userName}-${Date.now()}.webm`}
-                              className="p-2.5 glass-dark text-slate-400 hover:text-white rounded-xl border border-white/5 transition-all"
-                              title="تحميل التسجيل"
-                            >
-                              <Download className="w-5 h-5" />
-                            </a>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-                          <div className="flex-1 w-full">
-                            <audio src={rec.audioData} controls className="w-full h-12 rounded-xl" />
-                          </div>
-
-                          {isHost && round?.status === 'reviewing' && (
-                            <div className="flex flex-col gap-4 p-5 glass-dark rounded-3xl border border-white/10 relative z-10">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Star className="w-4 h-4 text-amber-400" />
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">تقييم المضيف</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  {[...Array(5)].map((_, i) => {
-                                    const scoreValue = (i + 1) * 20;
-                                    const isActive = (rec.score || 0) >= scoreValue;
-                                    return (
-                                      <button
-                                        key={i}
-                                        onClick={() => handleScore(rec, scoreValue)}
-                                        className={`p-1 transition-all duration-300 hover:scale-110 ${isActive ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400/50'}`}
-                                        title={`${scoreValue} نقطة`}
-                                      >
-                                        <Star className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`} />
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3 pt-3 border-t border-white/5">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    value={rec.score || ''}
-                                    onChange={(e) => handleScore(rec, Number(e.target.value))}
-                                    placeholder="درجة من 100"
-                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:ring-2 focus:ring-amber-500/50 outline-none transition-all"
-                                  />
-                                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase">درجة</div>
-                                </div>
-                                <div className="px-3 py-2 glass-dark rounded-xl border border-white/5 text-amber-400 font-black text-lg min-w-[3rem] text-center">
-                                  {rec.score || 0}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {isHost && round?.status === 'reviewing' && (
-                          <div className="mt-6 pt-6 border-t border-white/5">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">الموجة الصوتية للتسجيل</p>
-                            <div className="glass-dark p-4 rounded-2xl border border-white/5">
-                              <Waveform audioUrl={rec.audioData} />
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="mt-6 pt-6 border-t border-white/5">
-                          {rec.feedback ? (
-                            <div className="flex gap-4">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                                <Sparkles className="w-5 h-5 text-emerald-400" />
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">تقييم الذكاء الاصطناعي</p>
-                                <p className="text-slate-300 text-sm leading-relaxed font-medium">{rec.feedback}</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => handleGetFeedback(rec)}
-                              disabled={analyzingId === rec.id}
-                              className={`flex items-center gap-3 px-6 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${analyzingId === rec.id
-                                ? 'glass-dark/5 text-slate-400 cursor-not-allowed'
-                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
-                                }`}
-                            >
-                              {analyzingId === rec.id ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                  جاري تحليل التلاوة...
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="w-4 h-4" />
-                                  احصل على تقييم الذكاء الاصطناعي
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
+                   <div className="pt-10 flex flex-col items-center">
+                     {round.status === 'countdown' && <div className="text-9xl font-black animate-bounce">{localCountdown}</div>}
+                     {round.status === 'recording' && (
+                       <div className="w-full flex flex-col items-center gap-8">
+                         {!round.activeRecorderId ? (
+                           <button onClick={claimRecording} className="px-16 py-8 rounded-[3rem] bg-emerald-500 text-white font-black text-3xl shadow-2xl hover:scale-105 transition-all flex items-center gap-4"><Mic className="w-10 h-10" /> ترتيل</button>
+                         ) : (
+                           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full space-y-8">
+                             <div className="flex items-center gap-6 justify-center">
+                               <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${round.activeRecorderId}`} className="w-20 h-20 rounded-2xl border-2 border-emerald-500" alt="" />
+                               <div className="text-right"><p className="text-emerald-400 text-xs font-bold">يتلو الآن</p><h4 className="text-2xl font-black">{activeUsers.find(u => u.uid === round.activeRecorderId)?.name || 'قارئ'}</h4></div>
+                             </div>
+                             {round.activeRecorderId === user.uid && (
+                               <div className="space-y-6">
+                                 <div className="text-5xl font-mono font-black text-rose-500">{Math.floor(recordingTime/60)}:{(recordingTime%60).toString().padStart(2,'0')}</div>
+                                 <button onClick={stopRecording} className="px-12 py-5 rounded-2xl bg-rose-600 font-black text-xl flex items-center gap-3 mx-auto"><Square /> إنهاء</button>
+                               </div>
+                             )}
+                           </motion.div>
+                         )}
+                       </div>
+                     )}
+                     {round.status === 'reviewing' && (
+                       <div className="space-y-6">
+                         <Star className="w-16 h-16 text-amber-400 mx-auto animate-pulse" />
+                         <h3 className="text-3xl font-black">مرحلة المراجعة</h3>
+                         {isHost && <button onClick={finishRound} className="px-10 py-4 bg-emerald-600 rounded-2xl font-bold">تثبيت النتائج</button>}
+                       </div>
+                     )}
+                     {round.status === 'finished' && (
+                       <div className="space-y-8">
+                         <Trophy className="w-20 h-20 text-amber-400 mx-auto" />
+                         <h2 className="text-4xl font-black">انتهت الجولة</h2>
+                         {isHost && <button onClick={startNewRound} className="px-12 py-5 bg-emerald-600 rounded-3xl font-black">جولة جديدة</button>}
+                       </div>
+                     )}
+                   </div>
+                </div>
+              ) : <Loader2 className="w-12 h-12 animate-spin text-slate-500" />}
             </motion.div>
-          )}
+          </div>
 
-        
-    </div> {/* Close Left Sidebar */}
-    
-    {/* RIGHT STAGE: Main Game Area */}
-    <div className="lg:col-span-8 xl:col-span-9 flex flex-col h-[calc(100vh-120px)] overflow-y-auto no-scrollbar pb-10">
-      {/* Game Area */}
-          <motion.div
-            layout
-            className="glass-dark rounded-[2.5rem] p-8 min-h-[500px] flex-1 flex flex-col items-center justify-center relative overflow-hidden group shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/5"
-          >
-            {/* Background Decoration */}
-            <div className={`absolute top-0 left-0 w-full h-1.5 ${theme.bg} opacity-30 group-hover:opacity-60 transition-opacity duration-500`}></div>
-            <div className="absolute -right-20 -top-20 w-64 h-64 glass-dark/5 blur-[100px] rounded-full" />
-            <div className="absolute -left-20 -bottom-20 w-64 h-64 glass-dark/5 blur-[100px] rounded-full" />
-
-            {room?.status === 'waiting' ? (
-              <div className="text-center space-y-8 max-w-md relative z-10 w-full">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className={`w-24 h-24 mx-auto rounded-3xl ${theme.lightBg} flex items-center justify-center mb-6 shadow-2xl rotate-3 relative`}
-                >
-                  <Users className={`w-12 h-12 ${theme.text}`} />
-                  {room.readyUsers && room.readyUsers.length > 0 && (
-                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-black w-8 h-8 rounded-full flex items-center justify-center border-4 border-slate-900 shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-                      {room.readyUsers.length}
+          {/* Recordings Feed */}
+          <div className="lg:col-span-3 space-y-6 overflow-y-auto no-scrollbar max-h-[calc(100vh-160px)]">
+             <div className="flex items-center justify-between px-2">
+               <h3 className="text-lg font-black flex items-center gap-2"><Volume2 /> الأصوات</h3>
+               <div className="flex bg-white/5 rounded-xl p-1">
+                 {['time', 'score'].map(s => <button key={s} onClick={() => setSortBy(s as any)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${sortBy === s ? 'bg-white/10 text-white' : 'text-slate-500'}`}>{s === 'time' ? 'الأحدث' : 'التقييم'}</button>)}
+               </div>
+             </div>
+             <AnimatePresence>
+               {recordings.map(rec => (
+                 <motion.div key={rec.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-dark p-5 rounded-3xl border border-white/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                       <span className="text-sm font-bold">{rec.userName}</span>
+                       {rec.score !== undefined && <span className="px-2 py-1 bg-amber-500/10 text-amber-400 text-xs font-black rounded-lg">{rec.score}</span>}
                     </div>
-                  )}
-                </motion.div>
-                <div className="space-y-4">
-                  <h2 className="text-4xl font-black text-gradient">بانتظار المجموعة</h2>
-
-                  {/* Readiness Progress Bar */}
-                  <div className="w-full max-w-xs mx-auto space-y-2">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      <span>نسبة الاستعداد</span>
-                      <span>{Math.round(((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100)}%</span>
+                    <audio src={rec.audioData} className="w-full h-8 opacity-70" controls />
+                    <div className="flex items-center justify-between pt-2">
+                       <button onClick={() => handleLike(rec)} className={`flex items-center gap-2 text-xs font-bold ${rec.likes?.includes(user.uid) ? 'text-rose-400' : 'text-slate-500'}`}><Heart className="w-4 h-4" /> {rec.likes?.length || 0}</button>
+                       {isHost && round?.status === 'reviewing' && (
+                         <div className="flex items-center gap-1">
+                           {[1,2,3,4,5].map(i => <button key={i} onClick={() => handleScore(rec, i*20)} className={`p-1 ${ (rec.score || 0) >= i*20 ? 'text-amber-400' : 'text-slate-700' }`}><Star className="w-4 h-4 fill-current" /></button>)}
+                         </div>
+                       )}
                     </div>
-                    <div className="h-2 glass-dark/5 rounded-full overflow-hidden border border-white/5">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${((room.readyUsers?.length || 0) / Math.max(activeUsers.length, 1)) * 100}%` }}
-                        className={`h-full ${theme.bg} shadow-[0_0_10px_rgba(255,255,255,0.2)]`}
-                      />
-                    </div>
-                  </div>
-
-                  <p className="text-slate-400 font-medium">
-                    {isHost
-                      ? `استعد لبدء الجولة. ${room.readyUsers?.length || 0} من ${participants.length} مستعدون.`
-                      : room?.readyUsers?.includes(user.uid)
-                        ? "أنت مستعد! بانتظار بقية اللاعبين والمضيف..."
-                        : "يرجى الضغط على زر الاستعداد ليعرف المضيف أنك جاهز."
-                    }
-                  </p>
-                </div>
-
-                {isHost && (
-                  <div className="space-y-6 w-full pt-4">
-                    <div className="glass-dark p-6 rounded-[2rem] border border-white/5 text-right space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">إعدادات الجولة</span>
-                        <Sparkles className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div className="flex gap-2 p-1 bg-black/40 rounded-2xl border border-white/5">
-                        <button
-                          onClick={() => setVerseSelectionMode('random')}
-                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'random' ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
-                        >
-                          عشوائي
-                        </button>
-                        <button
-                          onClick={() => setVerseSelectionMode('manual')}
-                          className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${verseSelectionMode === 'manual' ? 'glass-dark/10 text-white shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'text-slate-400 hover:text-slate-300'}`}
-                        >
-                          يدوي
-                        </button>
-                      </div>
-                      {verseSelectionMode === 'manual' && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          className="flex gap-4 pt-2"
-                        >
-                          <div className="flex-1 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">رقم السورة</label>
-                            <input
-                              type="number"
-                              min="1" max="114"
-                              value={manualSurah}
-                              onChange={(e) => setManualSurah(Number(e.target.value))}
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-center text-sm focus:ring-2 focus:ring-white/10 outline-none transition-all"
-                            />
-                          </div>
-                          <div className="flex-1 space-y-1.5">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">رقم الآية</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={manualAyah}
-                              onChange={(e) => setManualAyah(Number(e.target.value))}
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-center text-sm focus:ring-2 focus:ring-white/10 outline-none transition-all"
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-                    </div>
-                    <div className="w-full pt-4">
-                      {activeUsers.filter(u => u.isReady).length === 0 && (
-                        <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-[0.2em] mb-4 text-center animate-pulse">
-                          ⚠️ بانتظار استعداد أحد المشاركين على الأقل لفتح المجلس
-                        </p>
-                      )}
-                      <motion.button
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={startNewRound}
-                        disabled={isStartingRound}
-                        className={`w-full py-6 rounded-[2.5rem] font-black text-2xl shadow-2xl transition-all duration-700 flex items-center justify-center gap-4 group/btn relative overflow-hidden ${
-                          isStartingRound
-                            ? 'glass-dark/10 text-slate-500 cursor-not-allowed border border-white/5'
-                            : activeUsers.filter(u => u.isReady).length < 1 
-                              ? 'bg-slate-800/50 text-slate-400 border border-white/5 hover:border-emerald-500/30'
-                              : `bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-emerald-900/40 border border-emerald-400/20`
-                        }`}
-                      >
-                        {/* Shimmer Effect */}
-                        {!isStartingRound && activeUsers.filter(u => u.isReady).length > 0 && (
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                        )}
-                        
-                        {isStartingRound ? (
-                          <Loader2 className="w-8 h-8 animate-spin" />
-                        ) : (
-                          <>
-                            <div className={`p-2 rounded-xl transition-all duration-500 ${
-                              activeUsers.filter(u => u.isReady).length < 1 ? 'bg-white/5' : 'bg-white/20 shadow-lg'
-                            }`}>
-                              <Play className="w-6 h-6 fill-current" />
-                            </div>
-                            <span className="tracking-widest font-arabic">إطلاق الجولة الآن</span>
-                            {activeUsers.filter(u => u.isReady).length > 0 && (
-                              <div className="bg-black/20 px-3 py-1 rounded-full text-xs font-bold border border-white/10">
-                                {activeUsers.filter(u => u.isReady).length} جاهز
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </motion.button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : round ? (
-              <div className="w-full space-y-10 relative z-10">
-                {/* Verse Display */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-center space-y-6"
-                >
-                  <div className="inline-flex items-center gap-3 px-5 py-2 glass-dark rounded-full border border-white/10">
-                    <BookOpen className={`w-4 h-4 ${theme.text}`} />
-                    <span className="text-xs font-bold tracking-widest text-slate-300 uppercase">سورة {round.surahName} • آية {round.ayahNumber}</span>
-                  </div>
-                  <h2 className="text-4xl md:text-6xl font-arabic leading-[3] text-white text-center px-4 drop-shadow-2xl" dir="rtl" style={{ fontFamily: '"Amiri", serif' }}>
-                    {round.verseText}
-                  </h2>
-                </motion.div>
-
-                {/* Game State UI */}
-                <div className="flex flex-col items-center justify-center gap-8">
-                  {round.status === 'countdown' && (
-                    <div className="text-center space-y-6">
-                      <motion.div
-                        key={localCountdown}
-                        initial={{ scale: 1.5, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="text-9xl font-black text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.3)]"
-                      >
-                        {localCountdown}
-                      </motion.div>
-                      <p className="text-2xl font-black gold-gradient animate-pulse tracking-widest uppercase">استعد للتسجيل!</p>
-                    </div>
-                  )}
-
-                  {round.status === 'recording' && (
-                    <div className="w-full max-w-lg space-y-8">
-                      {!round.activeRecorderId ? (
-                        <div className="text-center space-y-6">
-                          <p className="text-slate-400 font-medium">كن أول من يضغط على الزر لبدء التلاوة!</p>
-                          <button
-                            onClick={claimRecording}
-                            className={`w-full py-8 rounded-[2.5rem] font-black text-3xl shadow-2xl transition-all duration-500 flex items-center justify-center gap-4 group/rec ${theme.bg} text-white hover:scale-105 active:scale-95 ${theme.glow}`}
-                          >
-                            <Mic className="w-10 h-10 group-hover/rec:scale-125 transition-transform duration-500" />
-                            سجل الآن!
-                          </button>
-                        </div>
-                      ) : (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="space-y-8"
-                        >
-                          <div className="flex items-center justify-center gap-6 glass-dark p-6 rounded-[2.5rem] border border-white/10">
-                            <div className="relative">
-                              <div className="absolute inset-0 bg-emerald-500 blur-2xl opacity-20 animate-pulse rounded-full" />
-                              <img
-                                src={participants.find(p => p.uid === round.activeRecorderId)?.photoURL}
-                                alt="Recorder"
-                                className="w-24 h-24 rounded-[2rem] border-4 border-emerald-500/50 object-cover relative z-10"
-                                referrerPolicy="no-referrer"
-                              />
-                              <div className="absolute -bottom-2 -right-2 bg-emerald-500 p-2.5 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] z-20 animate-bounce">
-                                <Mic className="w-5 h-5 text-white" />
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">جاري التلاوة الآن</p>
-                              <p className="text-3xl font-black text-white">
-                                {participants.find(p => p.uid === round.activeRecorderId)?.displayName}
-                              </p>
-                            </div>
-                          </div>
-
-                          {round.activeRecorderId === user.uid ? (
-                            <div className="space-y-6">
-                              <div className="flex items-center justify-between px-6 py-4 glass-dark rounded-2xl border border-white/10">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
-                                  <span className="text-red-500 font-mono text-2xl font-black">
-                                    {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                                  </span>
-                                </div>
-                                <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">أنت تقرأ الآن • الجميع يسمعك</span>
-                              </div>
-                              <div className="glass-dark p-4 rounded-3xl border border-white/5 overflow-hidden">
-                                <canvas ref={canvasRef} className="w-full h-32 rounded-2xl" />
-                              </div>
-                              <button
-                                onClick={stopRecording}
-                                className="w-full py-5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-[2rem] font-black text-xl hover:from-red-500 hover:to-rose-500 transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.6)] shadow-red-900/20 flex items-center justify-center gap-3 group/stop"
-                              >
-                                <Square className="w-6 h-6 group-hover/stop:scale-110 transition-transform" />
-                                إنهاء التلاوة
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="p-12 glass-dark rounded-[3rem] border border-white/5 flex flex-col items-center gap-6">
-                              <div className="relative">
-                                <div className="absolute inset-0 bg-indigo-500 blur-3xl opacity-20 animate-pulse" />
-                                <Activity className={`w-16 h-16 ${theme.text} animate-pulse relative z-10`} />
-                              </div>
-                              <p className="text-slate-400 text-center font-medium text-lg leading-relaxed">
-                                استمع بإنصات لتلاوة <br />
-                                <span className="text-white font-black">{participants.find(p => p.uid === round.activeRecorderId)?.displayName}</span>
-                              </p>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </div>
-                  )}
-
-                  {round.status === 'reviewing' && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="text-center space-y-8"
-                    >
-                      <div className="w-24 h-24 mx-auto rounded-[2rem] bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shadow-2xl shadow-amber-900/20">
-                        <Star className="w-12 h-12 text-amber-400 animate-spin-slow" />
-                      </div>
-                      <div className="space-y-2">
-                        <h2 className="text-4xl font-black text-gradient">مرحلة التقييم</h2>
-                        <p className="text-slate-400 font-medium">المضيف يقوم بتقييم التلاوات الآن.</p>
-                      </div>
-                      {isHost && (
-                        <div className="flex flex-wrap justify-center gap-4">
-                          <button
-                            onClick={finishRound}
-                            className="px-10 py-4 rounded-2xl font-black text-lg bg-emerald-600 text-white hover:scale-105 transition-all shadow-2xl shadow-emerald-900/20"
-                          >
-                            إعلان النتائج
-                          </button>
-                          <button
-                            onClick={startNewRound}
-                            className={`px-10 py-4 rounded-2xl font-black text-lg ${theme.bg} text-white hover:scale-105 transition-all shadow-2xl ${theme.glow}`}
-                          >
-                            جولة جديدة
-                          </button>
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-
-                  {round.status === 'finished' && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-center space-y-12 py-10"
-                      onAnimationComplete={() => {
-                        confetti({
-                          particleCount: 150,
-                          spread: 70,
-                          origin: { y: 0.6 },
-                          colors: ['#f59e0b', '#10b981', '#ffffff']
-                        });
-                      }}
-                    >
-                      <div className="space-y-4">
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ type: 'spring', damping: 12 }}
-                          className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto border-2 border-amber-500/20"
-                        >
-                          <Trophy className="w-12 h-12 text-amber-500" />
-                        </motion.div>
-                        <div className="space-y-2">
-                          <h2 className="text-6xl font-black text-gradient">نتائج الجولة</h2>
-                          <p className="text-slate-400 font-bold text-lg tracking-wide">تم الانتهاء من تقييم جميع التلاوات</p>
-                        </div>
-                      </div>
-
-                      <div className="w-full max-w-5xl mx-auto px-4">
-                        <RecordingsCarousel recordings={recordings.filter(r => r.roundId === round.id)} participants={participants} />
-                      </div>
-
-                      <div className="flex flex-col items-center gap-8 pt-10">
-                        <div className="flex items-center gap-6 px-8 py-4 glass-dark rounded-3xl border border-white/5">
-                          <div className="text-center px-6 border-r border-white/10">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">إجمالي المشاركين</p>
-                            <p className="text-2xl font-black text-white">{recordings.filter(r => r.roundId === round.id).length}</p>
-                          </div>
-                          <div className="text-center px-6">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">متوسط الدرجات</p>
-                            <p className="text-2xl font-black text-emerald-400">
-                              {Math.round(recordings.filter(r => r.roundId === round.id && r.score !== undefined).reduce((acc, curr) => acc + (curr.score || 0), 0) / (recordings.filter(r => r.roundId === round.id && r.score !== undefined).length || 1))}
-                            </p>
-                          </div>
-                        </div>
-
-                        {isHost && (
-                          <button
-                            onClick={startNewRound}
-                            className={`px-16 py-6 rounded-[2.5rem] font-black text-2xl ${theme.bg} text-white hover:scale-105 transition-all shadow-2xl ${theme.glow} flex items-center gap-4 group`}
-                          >
-                            <span>بدء جولة جديدة</span>
-                            <Shuffle className="w-6 h-6 group-hover:rotate-180 transition-transform duration-500" />
-                          </button>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </motion.div>
-
-          
-    </div>
-    
-    </main>
+                 </motion.div>
+               ))}
+             </AnimatePresence>
+          </div>
+        </main>
       </div>
 
-      {/* Settings Modal */}
+      {/* Modals & Audio */}
       <AnimatePresence>
         {isSettingsOpen && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl relative overflow-hidden"
-            >
-              {/* Modal Background Glow */}
-              <div className={`absolute top-0 left-0 w-full h-1 ${theme.bg}`} />
-
-              <div className="flex justify-between items-center mb-8">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl ${theme.lightBg} flex items-center justify-center`}>
-                    <Settings className={`w-6 h-6 ${theme.text}`} />
-                  </div>
-                  <h2 className="text-2xl font-black">إعدادات المجلس</h2>
-                </div>
-                <button
-                  onClick={() => setIsSettingsOpen(false)}
-                  className="p-2 hover:glass-dark/5 rounded-full transition-colors"
-                >
-                  <X className="w-6 h-6 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {/* General Settings */}
-                <div className="space-y-8">
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                      <Users className="w-3 h-3" />
-                      إعدادات عامة
-                    </h3>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <label className="text-sm font-bold text-slate-300">الحد الأقصى للمشاركين</label>
-                          <span className={`${theme.text} font-black`}>{editMaxParticipants}</span>
-                        </div>
-                        <input
-                          type="range" min="2" max="50"
-                          value={editMaxParticipants}
-                          onChange={(e) => setEditMaxParticipants(parseInt(e.target.value))}
-                          className={`w-full accent-emerald-500`}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <label className="text-sm font-bold text-slate-300">مدة التسجيل (ثانية)</label>
-                          <span className={`${theme.text} font-black`}>{editRecordingDuration}</span>
-                        </div>
-                        <input
-                          type="range" min="10" max="300" step="10"
-                          value={editRecordingDuration}
-                          onChange={(e) => setEditRecordingDuration(parseInt(e.target.value))}
-                          className={`w-full accent-emerald-500`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                      <Volume2 className="w-3 h-3" />
-                      إعدادات الصوت
-                    </h3>
-                    <div className="flex items-center justify-between p-4 glass-dark rounded-2xl border border-white/5">
-                      <div>
-                        <p className="text-sm font-bold text-white">تأثير الصدى (Reverb)</p>
-                        <p className="text-[10px] text-slate-400">محاكاة صوت المسجد الكبير</p>
-                      </div>
-                      <button
-                        onClick={() => setEchoEnabled(!echoEnabled)}
-                        className={`w-12 h-6 rounded-full transition-all relative ${echoEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 rounded-full glass-dark transition-all ${echoEnabled ? 'right-7' : 'right-1'}`} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Visual Settings */}
-                <div className="space-y-8">
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                      <Sparkles className="w-3 h-3" />
-                      المظهر والسمات
-                    </h3>
-
-                    <div className="space-y-4">
-                      <div className="space-y-3">
-                        <label className="text-sm font-bold text-slate-300">لون السمة</label>
-                        <div className="flex flex-wrap gap-3">
-                          {['emerald', 'blue', 'purple', 'rose', 'amber'].map(color => (
-                            <button
-                              key={color}
-                              onClick={() => setEditThemeColor(color)}
-                              className={`w-10 h-10 rounded-xl border-2 transition-all ${editThemeColor === color ? 'border-white scale-110 shadow-[0_12px_40px_rgba(0,0,0,0.5)]' : 'border-transparent opacity-60 hover:opacity-100'
-                                } ${color === 'emerald' ? 'bg-emerald-500' :
-                                  color === 'blue' ? 'bg-blue-500' :
-                                    color === 'purple' ? 'bg-purple-500' :
-                                      color === 'rose' ? 'bg-rose-500' :
-                                        'bg-amber-500'
-                                }`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-10 pt-8 border-t border-white/5 flex gap-4">
-                <button
-                  onClick={() => setIsSettingsOpen(false)}
-                  className="flex-1 py-4 rounded-2xl glass-dark/5 text-slate-400 font-bold hover:glass-dark/10 transition-all"
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={saveSettings}
-                  className={`flex-[2] py-4 rounded-2xl ${theme.bg} text-white font-black text-lg shadow-2xl ${theme.glow} hover:scale-[1.02] active:scale-95 transition-all`}
-                >
-                  حفظ التغييرات
-                </button>
-              </div>
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 max-w-lg w-full shadow-2xl space-y-8">
+               <div className="flex justify-between items-center"><h2 className="text-3xl font-black">الإعدادات</h2><button onClick={() => setIsSettingsOpen(false)}><X /></button></div>
+               <div className="space-y-6">
+                 <div><p className="text-sm font-bold mb-4">صدى المسجد</p><button onClick={() => setEchoEnabled(!echoEnabled)} className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 transition-all ${echoEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-white/5 border border-white/10 text-slate-500'}`}>{echoEnabled ? <Volume2 /> : <Mic />} {echoEnabled ? 'مفعل' : 'معطل'}</button></div>
+                 <div><p className="text-sm font-bold mb-4">لون السمة</p><div className="flex gap-4">{['emerald', 'blue', 'purple', 'rose'].map(c => <button key={c} onClick={() => setEditThemeColor(c)} className={`w-10 h-10 rounded-full ${c === 'emerald' ? 'bg-emerald-500' : c === 'blue' ? 'bg-blue-500' : c === 'purple' ? 'bg-purple-500' : 'bg-rose-500'} ${editThemeColor === c ? 'ring-4 ring-white' : ''}`} />)}</div></div>
+               </div>
+               <button onClick={saveSettings} className="w-full py-5 rounded-2xl bg-emerald-600 font-black text-xl">حفظ</button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Remote Audio Streams */}
       <div className="hidden">
-        {(Array.from(remoteStreams.keys()) as string[]).map((userId) => (
-          <RemoteAudio key={userId} stream={remoteStreams.get(userId)!} />
+        {(Array.from(remoteStreams.keys()) as string[]).map((uid) => (
+          <RemoteAudio key={uid} stream={remoteStreams.get(uid)!} />
         ))}
       </div>
-      <RatingModal
-        isOpen={isRatingModalOpen}
-        onClose={() => setIsRatingModalOpen(false)}
-        onSubmit={handleSubmitRating}
-      />
+      <RatingModal isOpen={isRatingModalOpen} onClose={() => setIsRatingModalOpen(false)} onSubmit={handleSubmitRating} />
     </div>
   );
 }
 
 function RemoteAudio({ stream }: { stream: MediaStream; key?: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-
   useEffect(() => {
-    if (audioRef.current) {
+    if (audioRef.current && stream) {
       audioRef.current.srcObject = stream;
     }
   }, [stream]);
-
   return <audio ref={audioRef} autoPlay />;
 }

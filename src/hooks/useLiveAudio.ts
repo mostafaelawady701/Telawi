@@ -232,5 +232,21 @@ export function useLiveAudio(roomId: string | undefined, user: any, isHost: bool
     }
   };
 
-  return { isLive, startLive, stopLive, joinLive, remoteStreams, activeUsers, updatePresence };
+  return { 
+    isLive, 
+    startLive, 
+    stopLive, 
+    joinLive, 
+    remoteStreams, 
+    activeUsers, 
+    updatePresence 
+  } as {
+    isLive: boolean;
+    startLive: () => Promise<void>;
+    stopLive: (broadcast?: boolean) => void;
+    joinLive: () => Promise<void>;
+    remoteStreams: Map<string, MediaStream>;
+    activeUsers: any[];
+    updatePresence: (metadata: any) => Promise<void>;
+  };
 }
