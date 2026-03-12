@@ -115,23 +115,30 @@ export const deleteDoc = async (docRef: any) => {
     if (error) throw error;
 };
 
-export const onSnapshot = (collOrDocRef: any, callback: (snap: any) => void) => {
+export const onSnapshot = (collOrDocRef: any, callback: (snap: any) => void, errorCallback?: (err: any) => void) => {
     const table = collOrDocRef.table;
     const id = collOrDocRef.id;
 
     const stream = async () => {
-        if (id) {
-            const { data } = await supabase.from(table).select().eq('id', id).maybeSingle();
-            callback({ exists: () => !!data, id, data: () => fromSnake(data) });
-        } else {
-            const { data } = await supabase.from(table).select().order('created_at', { ascending: false });
-            const docs = (data || []).map(d => ({ id: d.id, data: () => fromSnake(d) }));
-            callback({ docs, empty: docs.length === 0 });
+        try {
+            if (id) {
+                const { data, error } = await supabase.from(table).select().eq('id', id).maybeSingle();
+                if (error) throw error;
+                callback({ exists: () => !!data, id, data: () => fromSnake(data) });
+            } else {
+                const { data, error } = await supabase.from(table).select().order('created_at', { ascending: false });
+                if (error) throw error;
+                const docs = (data || []).map(d => ({ id: d.id, data: () => fromSnake(d) }));
+                callback({ docs, empty: docs.length === 0 });
+            }
+        } catch (err) {
+            if (errorCallback) errorCallback(err);
+            else console.error("onSnapshot stream error:", err);
         }
     };
 
     stream();
-    const sub = supabase.channel(`pub-${table}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => stream()).subscribe();
+    const sub = supabase.channel(`pub-${table}-${id || 'list'}`).on('postgres_changes', { event: '*', schema: 'public', table }, () => stream()).subscribe();
     return () => { supabase.removeChannel(sub); };
 };
 
@@ -152,9 +159,9 @@ export const updateUserProfile = async (uid: string, data: any) => {
     if (error) throw error;
 };
 
-export const query = (c: any) => c;
-export const orderBy = () => ({});
-export const limit = () => ({});
+export const query = (c: any, ..._args: any[]) => c;
+export const orderBy = (..._args: any[]) => ({});
+export const limit = (..._args: any[]) => ({});
 export const arrayUnion = (val: any) => val;
 export const arrayRemove = (val: any) => val;
 export const getDocs = async (collRef: any) => {
