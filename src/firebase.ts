@@ -83,7 +83,11 @@ export const doc = (_db: any, ...path: string[]): any => ({ table: path[path.len
 const toSnake = (obj: any) => {
     const snake: any = {};
     for (const key in obj) {
-        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        // Handle acronyms like URL -> url
+        const snakeKey = key
+            .replace(/URL$/, 'Url')
+            .replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+            .replace(/^_/, ''); // Clean leading underscore if any
         snake[snakeKey] = obj[key];
     }
     return snake;
